@@ -1,4 +1,4 @@
-import { convertFontToBin } from "./converter.js";
+import { convertFontToBin, type ConvertProgress } from "./converter.js";
 import { readJsonObject, writeJsonObject, type AppStorage } from "./storage.js";
 
 export interface QueueMessage {
@@ -20,8 +20,8 @@ interface PersistedJobState {
   output_key?: string;
   output_name?: string;
   error_message?: string;
-  progress?: {
-    phase: string;
+  progress?: ConvertProgress | {
+    phase: "processing" | "failed";
     percent: number;
     done: number;
     total: number;
@@ -50,6 +50,40 @@ function outputNameForJob(msg: QueueMessage): string {
 
 async function writeJobState(storage: AppStorage, jobId: string, state: PersistedJobState): Promise<void> {
   await writeJsonObject((value) => storage.writeJob(jobId, value), state);
+}
+
+async function readJobState(storage: AppStorage, jobId: string): Promise<PersistedJobState | null> {
+  return readJsonObject<PersistedJobState>(() => storage.readJob(jobId));
+}
+
+async function persistJobProgress(
+  storage: AppStorage,
+  jobId: string,
+  fallbackRequest: QueueMessage,
+  progress: ConvertProgress
+): Promise<void> {
+  const existingState = await readJobState(storage, jobId);
+  if (existingState && existingState.status !== "processing") {
+    return;
+  }
+  if (
+    existingState?.status === "processing" &&
+    existingState.progress?.phase === progress.phase &&
+    existingState.progress?.percent === progress.percent
+  ) {
+    return;
+  }
+  await writeJobState(storage, jobId, {
+    ...(existingState ?? {
+      job_id: jobId,
+      request: fallbackRequest,
+    }),
+    job_id: jobId,
+    status: "processing",
+    error_message: undefined,
+    request: existingState?.request ?? fallbackRequest,
+    progress,
+  });
 }
 
 async function claimQueuedJob(storage: AppStorage, msg: QueueMessage): Promise<boolean> {
@@ -103,6 +137,8 @@ async function markJobFailed(storage: AppStorage, jobId: string, fallbackRequest
 }
 
 export async function processOneJob(msg: QueueMessage, env: ConsumerEnv): Promise<JobResult> {
+  let progressWrite = Promise.resolve();
+
   try {
     const claimed = await claimQueuedJob(env.storage, msg);
     if (!claimed) {
@@ -122,14 +158,20 @@ export async function processOneJob(msg: QueueMessage, env: ConsumerEnv): Promis
       throw new Error(`missing font object: ${msg.font_object_key}`);
     }
 
-    const out = await convertFontToBin({
-      fontData: fontBytes,
-      tier: msg.tier,
-      fontSizePx: msg.font_size_px,
-      outputWidthPx: msg.output_width_px ?? msg.letter_spacing_px ?? 33,
-      outputHeightPx: msg.output_height_px ?? msg.line_spacing_px ?? 39,
-      compatFlipY: msg.compat_flip_y !== false,
-    });
+    const out = await convertFontToBin(
+      {
+        fontData: fontBytes,
+        tier: msg.tier,
+        fontSizePx: msg.font_size_px,
+        outputWidthPx: msg.output_width_px ?? msg.letter_spacing_px ?? 33,
+        outputHeightPx: msg.output_height_px ?? msg.line_spacing_px ?? 39,
+        compatFlipY: msg.compat_flip_y !== false,
+      },
+      (progress) => {
+        progressWrite = progressWrite.then(() => persistJobProgress(env.storage, msg.job_id, msg, progress));
+      }
+    );
+    await progressWrite;
 
     const outputKey = `outputs/${msg.job_id}.bin`;
     const outputName = outputNameForJob(msg);
@@ -158,6 +200,11 @@ export async function processOneJob(msg: QueueMessage, env: ConsumerEnv): Promis
   } catch (error) {
     if (error instanceof Error && error.message === `job is not claimable: ${msg.job_id}`) {
       throw error;
+    }
+    try {
+      await progressWrite;
+    } catch {
+      // Keep the original failure and still persist the final failed state.
     }
     return markJobFailed(env.storage, msg.job_id, msg, error);
   }
