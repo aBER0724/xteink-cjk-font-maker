@@ -1,0 +1,40 @@
+services:
+  app:
+    build:
+      context: .
+      target: dev
+    working_dir: /app
+    command:
+      - sh
+      - -c
+      - |
+        npx tsc --noCheck --outDir dist --module NodeNext --moduleResolution NodeNext --target ES2022 --watch server/index.ts worker/src/api.ts worker/src/consumer.ts worker/src/storage.ts worker/src/types.ts &
+        until [ -f dist/server/index.js ]; do sleep 1; done
+        node --watch dist/server/index.js
+    volumes:
+      - .:/app
+      - app_node_modules:/app/node_modules
+    ports:
+      - "3000:3000"
+    environment:
+      PORT: "3000"
+
+  web:
+    build:
+      context: .
+      target: dev
+    working_dir: /app
+    command: npm run web:dev -- --host 0.0.0.0
+    volumes:
+      - .:/app
+      - web_node_modules:/app/node_modules
+    ports:
+      - "5273:5173"
+    environment:
+      VITE_API_PROXY_TARGET: http://app:3000
+    depends_on:
+      - app
+
+volumes:
+  app_node_modules:
+  web_node_modules:
