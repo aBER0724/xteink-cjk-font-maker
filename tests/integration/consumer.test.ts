@@ -120,7 +120,7 @@ describe("processOneJob", () => {
         });
 
         return {
-          data: new Uint8Array([1, 2, 3]),
+          data: new Uint8Array(Math.ceil(33 / 8) * 39 * 0x10000),
           width: 33,
           height: 39,
           bytesPerGlyph: 195,
@@ -339,7 +339,7 @@ describe("processOneJob", () => {
         total: 8,
       });
       return {
-        data: new Uint8Array([1, 2, 3]),
+        data: new Uint8Array(Math.ceil(33 / 8) * 39 * 0x10000),
         width: 33,
         height: 39,
         bytesPerGlyph: 195,
@@ -377,6 +377,67 @@ describe("processOneJob", () => {
     });
   });
 
+  it("passes requested output format through to converter", async () => {
+    const storage = createMemoryStorage();
+    await storage.writeUpload("uploads/sample.ttf", buildTestFontBytes());
+    await storage.writeJob(
+      "job-xbf2",
+      JSON.stringify({
+        job_id: "job-xbf2",
+        status: "queued",
+        request: {
+          font_object_key: "uploads/sample.ttf",
+          tier: "6k",
+          font_size_px: 28,
+          output_width_px: 33,
+          output_height_px: 39,
+          output_format: "xbf2",
+          font_name: "Sample Font.ttf",
+        },
+      })
+    );
+
+    const convertSpy = vi.spyOn(converterModule, "convertFontToBin").mockResolvedValue({
+      data: new Uint8Array(Math.ceil(33 / 8) * 39 * 0x10000),
+      width: 33,
+      height: 39,
+      bytesPerGlyph: 195,
+    });
+
+    const result = await processOneJob(
+      {
+        job_id: "job-xbf2",
+        font_object_key: "uploads/sample.ttf",
+        tier: "6k",
+        font_size_px: 28,
+        output_width_px: 33,
+        output_height_px: 39,
+        output_format: "xbf2",
+        font_name: "Sample Font.ttf",
+      },
+      { storage }
+    );
+
+    expect(convertSpy).toHaveBeenCalledTimes(1);
+    expect(convertSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ outputFormat: "xbf2" }),
+      expect.any(Function)
+    );
+    expect(result).toMatchObject({
+      output_key: "outputs/job-xbf2.xbf2",
+      output_name: "Sample Font_28_33x39.xbf2",
+    });
+
+    const jobStateText = await storage.readJob("job-xbf2");
+    expect(jobStateText).not.toBeNull();
+    expect(JSON.parse(jobStateText as string)).toMatchObject({
+      job_id: "job-xbf2",
+      status: "done",
+      output_key: "outputs/job-xbf2.xbf2",
+      output_name: "Sample Font_28_33x39.xbf2",
+    });
+  });
+
   it("allows only one concurrent filesystem claimant to process a queued job", async () => {
     const storageRoot = await createTempDir();
     const storage = createFileSystemStorage(storageRoot);
@@ -401,7 +462,10 @@ describe("processOneJob", () => {
     const convertSpy = vi.spyOn(converterModule, "convertFontToBin").mockImplementation(async (input) => {
       await new Promise((resolve) => setTimeout(resolve, 25));
       return {
-        data: new Uint8Array(input.fontData),
+        data: new Uint8Array(Math.ceil(33 / 8) * 39 * 0x10000),
+        width: 33,
+        height: 39,
+        bytesPerGlyph: 195,
       };
     });
 

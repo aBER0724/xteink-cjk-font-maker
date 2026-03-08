@@ -161,6 +161,61 @@ describe("api routes", () => {
     expect(body.job_id).toBe(jobId);
     expect(body.status).toBe("queued");
     expect(body.request.font_weight).toBe(700);
+    expect(body.request.output_format).toBeUndefined();
+  });
+
+  it("persists requested output format on queued jobs", async () => {
+    const { objectKey, storage } = await uploadFixture();
+    const res = await handleApiData(
+      {
+        method: "POST",
+        url: "https://example.com/api/jobs",
+        headers: { "content-type": "application/json" },
+        body: new TextEncoder().encode(JSON.stringify({
+          font_object_key: objectKey,
+          tier: "6k",
+          font_size_px: 28,
+          font_weight: 700,
+          output_width_px: 33,
+          output_height_px: 39,
+          output_format: "xbf2",
+          font_name: "Yozai-Medium.ttf",
+        })),
+      },
+      { storage }
+    );
+    expect(res.status).toBe(202);
+    const jobId = (await res.json()).job_id as string;
+
+    const bodyRes = await getJobState(jobId, storage);
+    expect(bodyRes.status).toBe(200);
+    const body = await bodyRes.json();
+    expect(body.request.output_format).toBe("xbf2");
+  });
+
+  it("rejects unknown output formats when creating jobs", async () => {
+    const { objectKey, storage } = await uploadFixture();
+    const res = await handleApiData(
+      {
+        method: "POST",
+        url: "https://example.com/api/jobs",
+        headers: { "content-type": "application/json" },
+        body: new TextEncoder().encode(JSON.stringify({
+          font_object_key: objectKey,
+          tier: "6k",
+          font_size_px: 28,
+          font_weight: 700,
+          output_width_px: 33,
+          output_height_px: 39,
+          output_format: "foo",
+          font_name: "Yozai-Medium.ttf",
+        })),
+      },
+      { storage }
+    );
+
+    expect(res.status).toBe(400);
+    await expect(res.json()).resolves.toEqual({ code: "ERR_INVALID_OUTPUT_FORMAT" });
   });
 
   it("returns job not ready for download metadata before processing", async () => {
@@ -205,6 +260,72 @@ describe("api routes", () => {
     const body = await bodyRes.json();
     expect(body.status).toBe("queued");
     expect(body.request.font_name).toBe("悠哉字体-Medium.ttf");
+  });
+
+  it("keeps returning the last valid job state when storage reads transiently fail", async () => {
+    const baseStorage = createMemoryStorage();
+    const uploadRes = await handleApiData(
+      {
+        method: "POST",
+        url: "https://example.com/api/upload-url",
+        headers: { "content-type": "application/json" },
+        body: new TextEncoder().encode(JSON.stringify({ file_name: "sample.ttf" })),
+      },
+      { storage: baseStorage }
+    );
+    expect(uploadRes.status).toBe(200);
+    const uploadMeta = await uploadRes.json();
+    const bytes = buildTestFontBytes();
+    const uploadBody = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
+    const putRes = await handleApiData(
+      {
+        method: "PUT",
+        url: `https://example.com${uploadMeta.upload_url as string}`,
+        body: new Uint8Array(uploadBody),
+      },
+      { storage: baseStorage }
+    );
+    expect(putRes.status).toBe(200);
+    const jobId = await createJob(uploadMeta.object_key as string, baseStorage);
+
+    let readCount = 0;
+    const storage = {
+      ...baseStorage,
+      async readJob(currentJobId: string) {
+        const raw = await baseStorage.readJob(currentJobId);
+        if (currentJobId === jobId) {
+          readCount += 1;
+          if (readCount === 2) {
+            return null;
+          }
+          if (readCount === 3) {
+            return "{";
+          }
+        }
+        return raw;
+      },
+    };
+
+    const first = await getJobState(jobId, storage);
+    expect(first.status).toBe(200);
+    await expect(first.json()).resolves.toMatchObject({
+      job_id: jobId,
+      status: "queued",
+    });
+
+    const second = await getJobState(jobId, storage);
+    expect(second.status).toBe(200);
+    await expect(second.json()).resolves.toMatchObject({
+      job_id: jobId,
+      status: "queued",
+    });
+
+    const third = await getJobState(jobId, storage);
+    expect(third.status).toBe(200);
+    await expect(third.json()).resolves.toMatchObject({
+      job_id: jobId,
+      status: "queued",
+    });
   });
 
   it("returns not found for missing jobs", async () => {

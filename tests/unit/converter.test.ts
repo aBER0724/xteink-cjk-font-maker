@@ -2,9 +2,43 @@ import { describe, expect, it } from "vitest";
 import { convertFontToBin } from "../../worker/src/converter";
 import { buildTestFontBytes } from "../helpers/font-fixture";
 
+function parseXbf2(bytes: Uint8Array) {
+  const header = new DataView(bytes.buffer, bytes.byteOffset, 20);
+  const metricsOffset = header.getUint32(12, true);
+  const glyphDataOffset = header.getUint32(16, true);
+  const metricsCount = (glyphDataOffset - metricsOffset) / 12;
+  const metrics = new Map<number, { left: number; top: number; advanceX: number; flags: number }>();
+
+  for (let index = 0; index < metricsCount; index += 1) {
+    const entry = new DataView(bytes.buffer, bytes.byteOffset + metricsOffset + index * 12, 12);
+    metrics.set(entry.getUint32(0, true), {
+      left: entry.getInt16(4, true),
+      top: entry.getInt16(6, true),
+      advanceX: entry.getUint16(8, true),
+      flags: entry.getUint16(10, true),
+    });
+  }
+
+  return {
+    magic: String.fromCharCode(...bytes.slice(0, 4)),
+    width: bytes[4],
+    height: bytes[5],
+    ascender: header.getInt16(6, true),
+    descender: header.getInt16(8, true),
+    lineHeight: header.getUint16(10, true),
+    metricsOffset,
+    glyphDataOffset,
+    metrics,
+  };
+}
+
 function readGlyphSlot(buffer: Uint8Array, codePoint: number, bytesPerGlyph: number): Uint8Array {
   const offset = codePoint * bytesPerGlyph;
   return buffer.slice(offset, offset + bytesPerGlyph);
+}
+
+function scaleFixtureUnits(value: number, fontSizePx = 28): number {
+  return Math.round((value * fontSizePx) / 1000);
 }
 
 function countSetBits(bytes: Uint8Array): number {
@@ -127,5 +161,111 @@ describe("convertFontToBin", () => {
 
     expect(bits550).toBeGreaterThan(bits450);
     expect(bits650).toBeGreaterThan(bits550);
+  });
+
+  it("packs xbf2 output with font metrics and glyph metrics when requested", async () => {
+    const out = await convertFontToBin({
+      fontData: buildTestFontBytes(),
+      tier: "6k",
+      fontSizePx: 28,
+      outputWidthPx: 33,
+      outputHeightPx: 39,
+      outputFormat: "xbf2",
+    });
+
+    const parsed = parseXbf2(out.data);
+    const metricsA = parsed.metrics.get(0x41);
+    const glyphBytes = Math.ceil(parsed.width / 8) * parsed.height;
+    const slotA = out.data.slice(parsed.glyphDataOffset + 0x41 * glyphBytes, parsed.glyphDataOffset + (0x41 + 1) * glyphBytes);
+
+    expect(parsed.magic).toBe("XBF2");
+    expect(parsed.width).toBe(33);
+    expect(parsed.height).toBe(39);
+    expect(parsed.ascender).toBeGreaterThan(0);
+    expect(parsed.lineHeight).toBeGreaterThan(parsed.ascender);
+    expect(metricsA).toBeDefined();
+    expect(metricsA?.advanceX).toBeGreaterThan(0);
+    expect(metricsA?.flags).toBeGreaterThan(0);
+    expect(slotA.some((value) => value !== 0)).toBe(true);
+  });
+
+  it("keeps xbf2 advanceX stable across weight changes", async () => {
+    const normal = parseXbf2((await convertFontToBin({
+      fontData: buildTestFontBytes(),
+      tier: "6k",
+      fontSizePx: 28,
+      fontWeight: 400,
+      outputWidthPx: 33,
+      outputHeightPx: 39,
+      outputFormat: "xbf2",
+    })).data);
+    const bold = parseXbf2((await convertFontToBin({
+      fontData: buildTestFontBytes(),
+      tier: "6k",
+      fontSizePx: 28,
+      fontWeight: 650,
+      outputWidthPx: 33,
+      outputHeightPx: 39,
+      outputFormat: "xbf2",
+    })).data);
+
+    expect(normal.metrics.get(0x41)?.advanceX).toBeDefined();
+    expect(bold.metrics.get(0x41)?.advanceX).toBeDefined();
+    expect(normal.metrics.get(0x41)?.advanceX).toBe(bold.metrics.get(0x41)?.advanceX);
+  });
+
+  it("encodes xbf2 metrics from glyph layout fields instead of output slot placement", async () => {
+    const tight = parseXbf2((await convertFontToBin({
+      fontData: buildTestFontBytes(),
+      tier: "6k",
+      fontSizePx: 28,
+      outputWidthPx: 33,
+      outputHeightPx: 39,
+      outputFormat: "xbf2",
+    })).data);
+    const loose = parseXbf2((await convertFontToBin({
+      fontData: buildTestFontBytes(),
+      tier: "6k",
+      fontSizePx: 28,
+      outputWidthPx: 45,
+      outputHeightPx: 51,
+      outputFormat: "xbf2",
+    })).data);
+
+    const tightA = tight.metrics.get(0x41);
+    const looseA = loose.metrics.get(0x41);
+    const tightG = tight.metrics.get(0x67);
+
+    expect(tightA).toEqual({
+      left: scaleFixtureUnits(100),
+      top: scaleFixtureUnits(800),
+      advanceX: scaleFixtureUnits(1000),
+      flags: 1,
+    });
+    expect(looseA).toEqual(tightA);
+    expect(tightG).toEqual({
+      left: scaleFixtureUnits(150),
+      top: scaleFixtureUnits(500),
+      advanceX: scaleFixtureUnits(900),
+      flags: 1,
+    });
+  });
+
+  it("keeps advance metrics for spacing glyphs without ink", async () => {
+    const parsed = parseXbf2((await convertFontToBin({
+      fontData: buildTestFontBytes(),
+      tier: "6k",
+      fontSizePx: 28,
+      outputWidthPx: 33,
+      outputHeightPx: 39,
+      outputFormat: "xbf2",
+    })).data);
+
+    expect(parsed.metrics.get(0x20)).toEqual({
+      left: 0,
+      top: 0,
+      advanceX: scaleFixtureUnits(500),
+      flags: 0,
+    });
   });
 });

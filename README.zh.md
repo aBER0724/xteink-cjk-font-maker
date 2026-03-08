@@ -1,6 +1,6 @@
 # xteink-cjk-font-maker
 
-用于生成兼容 `crosspoint-reader-cjk` 的 `.bin` 文件的 Web 字体转换器。
+用于生成兼容 `crosspoint-reader-cjk` 的外部字体包（`legacy-bin` 与实验性的 `xbf2`）的 Web 字体转换器。
 
 [English](README.md) | [简体中文](README.zh.md) | [日本語](README.ja.md)
 
@@ -11,6 +11,7 @@
 - 上传 `TTF/OTF` 字体文件
 - 选择字符集等级：`6k`、`24k`、`65k`
 - 配置渲染参数：`font_size_px`、`font_weight`、`output_width_px`、`output_height_px`
+- 选择导出格式：默认 `legacy-bin`，可选实验性的 `xbf2`
 - 异步转换流程
 - 支持 PWA 的 Web UI
 

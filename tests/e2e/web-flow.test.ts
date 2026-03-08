@@ -4,7 +4,7 @@ import { runWebFlow } from "../../web/app";
 describe("web flow", () => {
   it("uploads a font, submits job, and shows download when done", async () => {
     const calls: string[] = [];
-    let jobBody: { font_weight?: number } | null = null;
+    let jobBody: { font_weight?: number; output_format?: string } | null = null;
 
     const apiRequest = async (path: string, init?: RequestInit): Promise<unknown> => {
       calls.push(path);
@@ -17,7 +17,10 @@ describe("web flow", () => {
       }
 
       if (path === "/api/jobs") {
-        jobBody = JSON.parse(String(init?.body ?? "{}")) as { font_weight?: number };
+        jobBody = JSON.parse(String(init?.body ?? "{}")) as {
+          font_weight?: number;
+          output_format?: string;
+        };
         return { job_id: "job-1" };
       }
 
@@ -44,6 +47,7 @@ describe("web flow", () => {
         fontWeight: 700,
         outputWidthPx: 33,
         outputHeightPx: 39,
+        outputFormat: "xbf2",
       },
       apiRequest
     );
@@ -57,6 +61,7 @@ describe("web flow", () => {
       "/api/jobs/job-1/download",
     ]);
     expect(jobBody?.font_weight).toBe(700);
+    expect(jobBody?.output_format).toBe("xbf2");
   });
 
   it("emits progress updates during conversion flow", async () => {

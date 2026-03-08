@@ -1,4 +1,5 @@
 import { convertFontToBin, type ConvertProgress } from "./converter.js";
+import { buildOutputName } from "./file-name.js";
 import { readJsonObject, writeJsonObject, type AppStorage } from "./storage.js";
 
 export interface QueueMessage {
@@ -10,6 +11,7 @@ export interface QueueMessage {
   line_spacing_px?: number;
   output_width_px?: number;
   output_height_px?: number;
+  output_format?: "legacy-bin" | "xbf2";
   compat_flip_y?: boolean;
   font_name?: string;
 }
@@ -45,7 +47,7 @@ function outputNameForJob(msg: QueueMessage): string {
     .trim() || "download";
   const width = msg.output_width_px ?? msg.letter_spacing_px ?? 33;
   const height = msg.output_height_px ?? msg.line_spacing_px ?? 39;
-  return `${baseName}_${msg.font_size_px}_${width}x${height}.bin`;
+  return buildOutputName(baseName, msg.font_size_px, width, height, msg.output_format);
 }
 
 async function writeJobState(storage: AppStorage, jobId: string, state: PersistedJobState): Promise<void> {
@@ -165,6 +167,7 @@ export async function processOneJob(msg: QueueMessage, env: ConsumerEnv): Promis
         fontSizePx: msg.font_size_px,
         outputWidthPx: msg.output_width_px ?? msg.letter_spacing_px ?? 33,
         outputHeightPx: msg.output_height_px ?? msg.line_spacing_px ?? 39,
+        outputFormat: msg.output_format,
         compatFlipY: msg.compat_flip_y !== false,
       },
       (progress) => {
@@ -173,7 +176,8 @@ export async function processOneJob(msg: QueueMessage, env: ConsumerEnv): Promis
     );
     await progressWrite;
 
-    const outputKey = `outputs/${msg.job_id}.bin`;
+    const outputExtension = msg.output_format === "xbf2" ? ".xbf2" : ".bin";
+    const outputKey = `outputs/${msg.job_id}${outputExtension}`;
     const outputName = outputNameForJob(msg);
     await env.storage.writeOutput(outputKey, out.data);
     await writeJobState(env.storage, msg.job_id, {
