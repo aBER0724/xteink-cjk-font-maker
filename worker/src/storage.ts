@@ -1,4 +1,4 @@
-import { mkdir, open, readFile, unlink, writeFile } from "node:fs/promises";
+import { mkdir, open, readFile, rename, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 export interface AppStorage {
@@ -63,6 +63,13 @@ async function readTextIfExists(filePath: string): Promise<string | null> {
   }
 }
 
+async function writeTextAtomically(filePath: string, value: string): Promise<void> {
+  await ensureParentDir(filePath);
+  const tempPath = `${filePath}.${process.pid}.${Date.now()}.tmp`;
+  await writeFile(tempPath, value, "utf8");
+  await rename(tempPath, filePath);
+}
+
 export function createFileSystemStorage(rootDir: string): AppStorage {
   const resolveUploadPath = (key: string) => path.join(rootDir, safePathSegment(key));
   const resolveOutputPath = (key: string) => path.join(rootDir, safePathSegment(key));
@@ -91,8 +98,7 @@ export function createFileSystemStorage(rootDir: string): AppStorage {
     },
     async writeJob(jobId: string, value: string) {
       const filePath = resolveJobPath(jobId);
-      await ensureParentDir(filePath);
-      await writeFile(filePath, value, "utf8");
+      await writeTextAtomically(filePath, value);
     },
     async claimJob(jobId: string, nextValue: string) {
       const lockPath = resolveJobLockPath(jobId);
@@ -110,7 +116,7 @@ export function createFileSystemStorage(rootDir: string): AppStorage {
 
       try {
         await handle.close();
-        await writeFile(resolveJobPath(jobId), nextValue, "utf8");
+        await writeTextAtomically(resolveJobPath(jobId), nextValue);
         return true;
       } catch (error) {
         await unlink(lockPath).catch(() => undefined);
