@@ -726,12 +726,12 @@ export function App() {
   };
 
   return (
-    <main className="min-h-screen p-4 sm:p-5 md:p-8">
+    <main className="min-h-screen px-0.5 py-3 sm:px-1 sm:py-4 md:flex md:items-center md:justify-center md:px-8 md:py-8">
       {previewFontUrl ? (
         <style>{`@font-face { font-family: "UploadedPreviewFont"; src: url("${previewFontUrl}"); }`}</style>
       ) : null}
 
-      <div className="mx-auto w-full max-w-7xl">
+      <div className="w-full max-w-[1200px]">
         <CardHeader>
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
@@ -784,7 +784,7 @@ export function App() {
             </div>
           </CardHeader>
         <CardContent>
-            <div className="grid min-w-0 gap-5 xl:justify-center xl:grid-cols-[380px_420px_380px]">
+            <div className="grid min-w-0 justify-center gap-5 xl:grid-cols-[380px_420px_380px]">
               <Card className="order-2 min-w-0 border-border">
                 <CardHeader className="pb-3">
                   <CardTitle className="text-base">{copy.conversionSettings}</CardTitle>

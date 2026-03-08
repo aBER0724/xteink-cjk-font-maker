@@ -49,6 +49,7 @@ p {
 
 .app-card {
   width: min(1180px, 100%);
+  margin: 0 auto;
   padding: 24px;
 }
 
@@ -75,6 +76,7 @@ p {
   display: grid;
   grid-template-columns: minmax(320px, 430px) minmax(400px, 1fr);
   align-items: start;
+  justify-content: center;
   gap: 20px;
 }
 
@@ -230,8 +232,12 @@ button {
 }
 
 @media (max-width: 980px) {
+  .app-shell {
+    padding: 6px;
+  }
+
   .app-card {
-    padding: 18px;
+    padding: 8px;
   }
 
   .layout-grid {
