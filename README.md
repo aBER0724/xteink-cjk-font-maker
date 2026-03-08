@@ -1,6 +1,6 @@
 # xteink-cjk-font-maker
 
-Web font converter for generating `crosspoint-reader-cjk` compatible `.bin` files.
+Web font converter for generating `crosspoint-reader-cjk` compatible external font packages (`legacy-bin` and experimental `xbf2`).
 
 [English](README.md) | [简体中文](README.zh.md) | [日本語](README.ja.md)
 
@@ -11,6 +11,7 @@ Web font converter for generating `crosspoint-reader-cjk` compatible `.bin` file
 - Upload `TTF/OTF` font files
 - Choose charset tier: `6k`, `24k`, `65k`
 - Configure rendering params: `font_size_px`, `font_weight`, `output_width_px`, `output_height_px`
+- Choose export format: default `legacy-bin`, optional experimental `xbf2`
 - Async conversion workflow
 - PWA-capable web UI
 

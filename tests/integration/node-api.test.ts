@@ -172,6 +172,92 @@ describe("node api server", () => {
     }
   });
 
+  it("persists and exposes xbf2 output names through the Node server", async () => {
+    const storageRoot = await createTempDir();
+    const server = createServer({ storageRoot });
+
+    await new Promise<void>((resolve) => {
+      server.listen(0, "127.0.0.1", () => resolve());
+    });
+
+    const { port } = server.address() as AddressInfo;
+    const fetchFromServer = (path: string, init?: RequestInit) => fetch(`http://127.0.0.1:${port}${path}`, init);
+
+    try {
+      const uploadMetaResponse = await fetchFromServer("/api/upload-url", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ file_name: "font.ttf" }),
+      });
+      expect(uploadMetaResponse.status).toBe(200);
+      const uploadMeta = await uploadMetaResponse.json();
+
+      const fontBytes = buildTestFontBytes();
+      const uploadBody = fontBytes.buffer.slice(fontBytes.byteOffset, fontBytes.byteOffset + fontBytes.byteLength) as ArrayBuffer;
+      const uploadResponse = await fetchFromServer(uploadMeta.upload_url as string, {
+        method: "PUT",
+        body: uploadBody,
+      });
+      expect(uploadResponse.status).toBe(200);
+
+      const createJobResponse = await fetchFromServer("/api/jobs", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          font_object_key: uploadMeta.object_key,
+          tier: "24k",
+          font_size_px: 24,
+          font_weight: 400,
+          output_width_px: 24,
+          output_height_px: 28,
+          output_format: "xbf2",
+          compat_flip_y: false,
+          font_name: "font.ttf",
+        }),
+      });
+
+      expect(createJobResponse.status).toBe(202);
+      const created = await createJobResponse.json();
+      const finalStatus = await waitForJobDone(fetchFromServer, created.job_id);
+
+      expect(finalStatus).toMatchObject({
+        job_id: created.job_id,
+        status: "done",
+        output_key: `outputs/${created.job_id}.xbf2`,
+        output_name: "font_24_24x28.xbf2",
+      });
+
+      const persistedState = JSON.parse(await readFile(`${storageRoot}/jobs/${created.job_id}.json`, "utf8"));
+      expect(persistedState).toMatchObject({
+        job_id: created.job_id,
+        status: "done",
+        output_key: `outputs/${created.job_id}.xbf2`,
+        output_name: "font_24_24x28.xbf2",
+      });
+
+      const outputBytes = await readFile(`${storageRoot}/outputs/${created.job_id}.xbf2`);
+      expect(outputBytes.byteLength).toBeGreaterThan(0);
+
+      const downloadResponse = await fetchFromServer(`/api/jobs/${created.job_id}/download`);
+      expect(downloadResponse.status).toBe(200);
+      await expect(downloadResponse.json()).resolves.toEqual({
+        job_id: created.job_id,
+        download_url: `/api/jobs/${created.job_id}/download/file`,
+        output_name: "font_24_24x28.xbf2",
+      });
+    } finally {
+      await new Promise<void>((resolve, reject) => {
+        server.close((error) => {
+          if (error) {
+            reject(error);
+            return;
+          }
+          resolve();
+        });
+      });
+    }
+  });
+
   it("does not re-schedule the same queued job on repeated status queries", async () => {
     const storageRoot = await createTempDir();
     const originalProcessOneJob = consumerModule.processOneJob;

@@ -9,6 +9,7 @@ interface JobRequestPayload {
   line_spacing_px?: number;
   output_width_px?: number;
   output_height_px?: number;
+  output_format?: "legacy-bin" | "xbf2";
   compat_flip_y?: boolean;
   font_name?: string;
 }
@@ -40,17 +41,33 @@ export interface ApiHandlerOptions {
 }
 
 const fallbackStorage = createMemoryStorage();
+const SUPPORTED_OUTPUT_FORMATS = new Set(["legacy-bin", "xbf2"]);
+const lastKnownJobStates = new WeakMap<AppStorage, Map<string, JobState>>();
+
+function getLastKnownJobStates(storage: AppStorage): Map<string, JobState> {
+  const existing = lastKnownJobStates.get(storage);
+  if (existing) {
+    return existing;
+  }
+
+  const created = new Map<string, JobState>();
+  lastKnownJobStates.set(storage, created);
+  return created;
+}
 
 async function loadJobState(jobId: string, storage: AppStorage): Promise<JobState | null> {
+  const knownStates = getLastKnownJobStates(storage);
   const raw = await storage.readJob(jobId);
   if (!raw) {
-    return null;
+    return knownStates.get(jobId) ?? null;
   }
 
   try {
-    return JSON.parse(raw) as JobState;
+    const state = JSON.parse(raw) as JobState;
+    knownStates.set(jobId, state);
+    return state;
   } catch {
-    return null;
+    return knownStates.get(jobId) ?? null;
   }
 }
 
@@ -179,6 +196,9 @@ export async function handleApiData(request: ApiRequest, options: ApiHandlerOpti
     const uploadedFont = payload.font_object_key ? await loadUploadObject(payload.font_object_key, storage) : null;
     if (!payload.font_object_key || !uploadedFont) {
       return json({ code: "ERR_FONT_NOT_FOUND" }, 400);
+    }
+    if (payload.output_format !== undefined && !SUPPORTED_OUTPUT_FORMATS.has(payload.output_format)) {
+      return json({ code: "ERR_INVALID_OUTPUT_FORMAT" }, 400);
     }
 
     const jobId = nextJobId();

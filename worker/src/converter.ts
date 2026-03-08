@@ -1,5 +1,6 @@
 import type { CharsetTier } from "./charset.js";
 import opentype from "opentype.js";
+import { wrapBitmapFontAsXbf2, XBF2_GLYPH_FLAG_HAS_INK, type Xbf2GlyphMetricsEntry } from "./bin-format.js";
 import { loadTier } from "./charset.js";
 
 export interface ConvertInput {
@@ -10,6 +11,7 @@ export interface ConvertInput {
   outputHeightPx: number;
   fontWeight?: number;
   compatFlipY?: boolean;
+  outputFormat?: "legacy-bin" | "xbf2";
 }
 
 export interface ConvertOutput {
@@ -72,6 +74,12 @@ interface RenderLayout {
   height: number;
   widthByte: number;
   bytesPerGlyph: number;
+}
+
+interface Xbf2FontMetrics {
+  ascender: number;
+  descender: number;
+  lineHeight: number;
 }
 
 function toExactArrayBuffer(bytes: Uint8Array): ArrayBuffer {
@@ -364,6 +372,47 @@ async function createRenderLayout(
   };
 }
 
+function scaleFontUnits(value: number, unitsPerEm: number, fontSizePx: number): number {
+  if (!Number.isFinite(value) || !Number.isFinite(unitsPerEm) || unitsPerEm <= 0) {
+    return 0;
+  }
+  return Math.round((value * fontSizePx) / unitsPerEm);
+}
+
+function clampGlyphMetric(value: number): number {
+  return Math.max(-32768, Math.min(32767, Math.trunc(value)));
+}
+
+function clampGlyphAdvance(value: number): number {
+  return Math.max(1, Math.min(65535, Math.trunc(value)));
+}
+
+function computeXbf2FontMetrics(font: opentype.Font, fontSizePx: number): Xbf2FontMetrics {
+  const ascender = Math.max(1, scaleFontUnits(font.ascender, font.unitsPerEm, fontSizePx));
+  const descender = Math.min(0, scaleFontUnits(font.descender, font.unitsPerEm, fontSizePx));
+  const lineHeight = Math.max(ascender + Math.abs(descender), scaleFontUnits(font.ascender - font.descender, font.unitsPerEm, fontSizePx));
+  return { ascender, descender, lineHeight };
+}
+
+function computeXbf2GlyphMetricsFromLayout(
+  codePoint: number,
+  glyph: opentype.Glyph,
+  font: opentype.Font,
+  fontSizePx: number
+): Xbf2GlyphMetricsEntry {
+  const metrics = glyph.getMetrics();
+  const advanceWidth = glyph.advanceWidth ?? 0;
+  const hasInk = glyph.path.commands.length > 0;
+
+  return {
+    codePoint,
+    left: clampGlyphMetric(scaleFontUnits(hasInk ? metrics.xMin : 0, font.unitsPerEm, fontSizePx)),
+    top: clampGlyphMetric(scaleFontUnits(hasInk ? metrics.yMax : 0, font.unitsPerEm, fontSizePx)),
+    advanceX: clampGlyphAdvance(scaleFontUnits(advanceWidth, font.unitsPerEm, fontSizePx)),
+    flags: hasInk ? XBF2_GLYPH_FLAG_HAS_INK : 0,
+  };
+}
+
 function renderGlyphBytes(
   glyph: opentype.Glyph,
   fontSizePx: number,
@@ -534,6 +583,9 @@ export async function convertFontToBin(input: ConvertInput, onProgress?: Convert
   const out = new Uint8Array(layout.bytesPerGlyph * BMP_SLOT_COUNT);
   const compatFlipY = input.compatFlipY ?? true;
   const fontWeight = Number.isFinite(input.fontWeight) ? Number(input.fontWeight) : 400;
+  const outputFormat = input.outputFormat ?? "legacy-bin";
+  const xbf2FontMetrics = outputFormat === "xbf2" ? computeXbf2FontMetrics(font, input.fontSizePx) : null;
+  const xbf2MetricsEntries: Xbf2GlyphMetricsEntry[] = [];
 
   emit({
     phase: "rendering",
@@ -545,7 +597,7 @@ export async function convertFontToBin(input: ConvertInput, onProgress?: Convert
   for (let i = 0; i < codePoints.length; i += 1) {
     const codePoint = codePoints[i];
     const glyph = font.charToGlyph(String.fromCodePoint(codePoint));
-    if (!glyph || glyph.path.commands.length === 0) {
+    if (!glyph) {
       if ((i & 63) === 0 || i === codePoints.length - 1) {
         emit({
           phase: "rendering",
@@ -557,8 +609,20 @@ export async function convertFontToBin(input: ConvertInput, onProgress?: Convert
       continue;
     }
 
-    const slot = renderGlyphBytes(glyph, input.fontSizePx, layout, compatFlipY, fontWeight);
+    const slot = glyph.path.commands.length === 0
+      ? new Uint8Array(layout.bytesPerGlyph)
+      : renderGlyphBytes(glyph, input.fontSizePx, layout, compatFlipY, fontWeight);
     out.set(slot, codePoint * layout.bytesPerGlyph);
+
+    if (xbf2FontMetrics) {
+      const metricsEntry = computeXbf2GlyphMetricsFromLayout(
+        codePoint,
+        glyph,
+        font,
+        input.fontSizePx
+      );
+      xbf2MetricsEntries.push(metricsEntry);
+    }
 
     if ((i & 63) === 0 || i === codePoints.length - 1) {
       emit({
@@ -581,8 +645,18 @@ export async function convertFontToBin(input: ConvertInput, onProgress?: Convert
     percent: 100,
   });
 
+  const data = outputFormat === "xbf2" && xbf2FontMetrics
+    ? wrapBitmapFontAsXbf2({
+        width: layout.width,
+        height: layout.height,
+        bitmapData: out,
+        ...xbf2FontMetrics,
+        metricsEntries: xbf2MetricsEntries,
+      })
+    : out;
+
   return {
-    data: out,
+    data,
     width: layout.width,
     height: layout.height,
     bytesPerGlyph: layout.bytesPerGlyph,

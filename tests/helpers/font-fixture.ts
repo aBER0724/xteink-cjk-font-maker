@@ -15,6 +15,20 @@ export function buildTestFontBytes(): Uint8Array {
     path,
   });
 
+  const pathG = new opentype.Path();
+  pathG.moveTo(150, -200);
+  pathG.lineTo(750, -200);
+  pathG.lineTo(750, 500);
+  pathG.lineTo(150, 500);
+  pathG.close();
+
+  const glyphG = new opentype.Glyph({
+    name: "g",
+    unicode: 0x67,
+    advanceWidth: 900,
+    path: pathG,
+  });
+
   const glyphSpace = new opentype.Glyph({
     name: "space",
     unicode: 0x20,
@@ -28,7 +42,7 @@ export function buildTestFontBytes(): Uint8Array {
     unitsPerEm: 1000,
     ascender: 900,
     descender: -100,
-    glyphs: [glyphSpace, glyphA],
+    glyphs: [glyphSpace, glyphA, glyphG],
   });
 
   return new Uint8Array(font.toArrayBuffer());

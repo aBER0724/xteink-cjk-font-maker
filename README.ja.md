@@ -1,6 +1,6 @@
 # xteink-cjk-font-maker
 
-`crosspoint-reader-cjk` 互換の `.bin` ファイルを生成する Web フォントコンバーターです。
+`crosspoint-reader-cjk` 互換の外部フォントパッケージ（`legacy-bin` と実験的な `xbf2`）を生成する Web フォントコンバーターです。
 
 [English](README.md) | [简体中文](README.zh.md) | [日本語](README.ja.md)
 
@@ -11,6 +11,7 @@
 - `TTF/OTF` フォントファイルのアップロード
 - 文字セット tier の選択：`6k` / `24k` / `65k`
 - レンダリングパラメータの設定：`font_size_px`、`font_weight`、`output_width_px`、`output_height_px`
+- 出力形式の選択：既定は `legacy-bin`、任意で実験的な `xbf2`
 - 非同期変換フロー
 - PWA 対応 Web UI
 

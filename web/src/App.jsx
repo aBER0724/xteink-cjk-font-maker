@@ -35,6 +35,10 @@ const CHARSET_TIER_OPTIONS = [
   { value: "24k", key: "charsetTierBalanced" },
   { value: "65k", key: "charsetTierFull" },
 ];
+const OUTPUT_FORMAT_OPTIONS = [
+  { value: "legacy-bin", key: "outputFormatLegacy" },
+  { value: "xbf2", key: "outputFormatXbf2" },
+];
 const DEVICE_COLOR_OPTIONS = [
   { value: "black", key: "deviceColorBlack" },
   { value: "silver", key: "deviceColorSilver" },
@@ -383,6 +387,7 @@ export function App() {
   const [fontWeight, setFontWeight] = useState(FONT_WEIGHT_BASE);
   const [outputWidthPx, setOutputWidthPx] = useState(33);
   const [outputHeightPx, setOutputHeightPx] = useState(39);
+  const [outputFormat, setOutputFormat] = useState("legacy-bin");
   const [deviceColor, setDeviceColor] = useState("black");
   const [displayMode, setDisplayMode] = useState("light");
   const [previewText, setPreviewText] = useState(DEFAULT_PREVIEW_TEXT);
@@ -670,6 +675,7 @@ export function App() {
         fontWeight,
         outputWidthPx,
         outputHeightPx,
+        outputFormat,
         compatFlipY: true,
       }, undefined, undefined, (progress) => {
         setProgressPercent(progress.percent);
@@ -863,6 +869,35 @@ export function App() {
                         value={fontSizePx}
                         onChange={(event) => setFontSizePx(Number(event.target.value) || 0)}
                       />
+                    </div>
+
+                    <div className="grid gap-2">
+                      <Label>{copy.outputFormat}</Label>
+                      <div
+                        role="group"
+                        aria-label={copy.outputFormat}
+                        className="inline-flex w-full items-center rounded-full bg-muted p-1"
+                      >
+                        {OUTPUT_FORMAT_OPTIONS.map((item) => {
+                          const active = item.value === outputFormat;
+                          return (
+                            <button
+                              key={item.value}
+                              type="button"
+                              onClick={() => setOutputFormat(item.value)}
+                              aria-pressed={active}
+                              title={copy.outputFormat}
+                              className={`flex-1 rounded-full px-2.5 py-1 text-center text-xs transition-all duration-200 sm:px-3 sm:py-1.5 sm:text-sm ${
+                                active
+                                  ? "bg-background font-medium text-foreground shadow-sm"
+                                  : "text-muted-foreground hover:text-foreground"
+                              }`}
+                            >
+                              {copy[item.key]}
+                            </button>
+                          );
+                        })}
+                      </div>
                     </div>
 
                     <div className="grid gap-2">
