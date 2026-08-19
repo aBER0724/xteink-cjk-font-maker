@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { mkdir, open, readFile, rename, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 
@@ -63,11 +64,38 @@ async function readTextIfExists(filePath: string): Promise<string | null> {
   }
 }
 
+const pendingJobWrites = new Map<string, Promise<void>>();
+const WINDOWS_RENAME_RETRY_CODES = new Set(["EPERM", "EBUSY", "EACCES"]);
+
+async function renameAtomically(tempPath: string, filePath: string): Promise<void> {
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      await rename(tempPath, filePath);
+      return;
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (process.platform !== "win32" || !code || !WINDOWS_RENAME_RETRY_CODES.has(code) || attempt >= 20) {
+        throw error;
+      }
+      await new Promise((resolve) => setTimeout(resolve, Math.min(5 * (attempt + 1), 50)));
+    }
+  }
+}
+
 async function writeTextAtomically(filePath: string, value: string): Promise<void> {
   await ensureParentDir(filePath);
-  const tempPath = `${filePath}.${process.pid}.${Date.now()}.tmp`;
-  await writeFile(tempPath, value, "utf8");
-  await rename(tempPath, filePath);
+  const tempPath = `${filePath}.${process.pid}.${Date.now()}.${randomUUID()}.tmp`;
+  try {
+    await writeFile(tempPath, value, "utf8");
+    await renameAtomically(tempPath, filePath);
+  } finally {
+    await unlink(tempPath).catch((error) => {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+        return;
+      }
+      throw error;
+    });
+  }
 }
 
 export function createFileSystemStorage(rootDir: string): AppStorage {
@@ -75,6 +103,19 @@ export function createFileSystemStorage(rootDir: string): AppStorage {
   const resolveOutputPath = (key: string) => path.join(rootDir, safePathSegment(key));
   const resolveJobPath = (jobId: string) => path.join(rootDir, "jobs", `${safePathSegment(jobId)}.json`);
   const resolveJobLockPath = (jobId: string) => path.join(rootDir, "jobs", `${safePathSegment(jobId)}.lock`);
+  const writeJobPath = (filePath: string, value: string): Promise<void> => {
+    const previous = pendingJobWrites.get(filePath) ?? Promise.resolve();
+    const current = previous
+      .catch(() => undefined)
+      .then(() => writeTextAtomically(filePath, value));
+    pendingJobWrites.set(filePath, current);
+    current.finally(() => {
+      if (pendingJobWrites.get(filePath) === current) {
+        pendingJobWrites.delete(filePath);
+      }
+    }).catch(() => undefined);
+    return current;
+  };
 
   return {
     async readUpload(key: string) {
@@ -98,7 +139,7 @@ export function createFileSystemStorage(rootDir: string): AppStorage {
     },
     async writeJob(jobId: string, value: string) {
       const filePath = resolveJobPath(jobId);
-      await writeTextAtomically(filePath, value);
+      await writeJobPath(filePath, value);
     },
     async claimJob(jobId: string, nextValue: string) {
       const lockPath = resolveJobLockPath(jobId);
@@ -116,7 +157,7 @@ export function createFileSystemStorage(rootDir: string): AppStorage {
 
       try {
         await handle.close();
-        await writeTextAtomically(resolveJobPath(jobId), nextValue);
+        await writeJobPath(resolveJobPath(jobId), nextValue);
         return true;
       } catch (error) {
         await unlink(lockPath).catch(() => undefined);

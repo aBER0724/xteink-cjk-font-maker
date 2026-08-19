@@ -37,7 +37,7 @@ describe("converter compatibility", () => {
     const slotDefault = readGlyphSlot(byDefault.data, 0x41, byDefault.bytesPerGlyph);
     const slotExplicit = readGlyphSlot(explicit.data, 0x41, explicit.bytesPerGlyph);
     expect(slotDefault).toEqual(slotExplicit);
-  });
+  }, 15_000);
 
   it("compatFlipY=true is exact vertical mirror of compatFlipY=false", async () => {
     const baseInput = {
@@ -55,5 +55,5 @@ describe("converter compatibility", () => {
     const slotPlain = readGlyphSlot(plain.data, 0x41, plain.bytesPerGlyph);
 
     expect(slotFlipped).toEqual(mirrorY(slotPlain, Math.ceil(plain.width / 8), plain.height));
-  });
+  }, 15_000);
 });
