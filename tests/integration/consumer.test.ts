@@ -50,6 +50,7 @@ describe("processOneJob", () => {
       async readFile(name) { return new Uint8Array([Number(name.match(/_(\d+)\.cpfont$/)?.[1])]); },
     };
 
+    const writeJobSpy = vi.spyOn(storage, "writeJob");
     const result = await processOneJob(request, {
       storage,
       cpfontCapability: {
@@ -72,6 +73,7 @@ describe("processOneJob", () => {
     expect(Object.keys(unzipSync(output!))).toHaveLength(9);
     const state = JSON.parse((await storage.readJob("job-cpfont"))!);
     expect(state.progress.phase).toBe("done");
+    expect(writeJobSpy.mock.calls.some(([, value]) => JSON.parse(value).progress?.phase === "packaging")).toBe(true);
     await expect(access(conversionRoot)).rejects.toMatchObject({ code: "ENOENT" });
   });
 

@@ -293,6 +293,23 @@ describe("api routes", () => {
     await expect(res.json()).resolves.toEqual({ code: "ERR_INVALID_OUTPUT_FORMAT" });
   });
 
+  it("serves completed cpfont packages with ZIP MIME and UTF-8-safe names", async () => {
+    const storage = createMemoryStorage();
+    await storage.writeOutput("outputs/job-zip.zip", new Uint8Array([0x50, 0x4b]));
+    await storage.writeJob("job-zip", JSON.stringify({
+      job_id: "job-zip", status: "done", output_key: "outputs/job-zip.zip", output_name: "示例_cpfont-v4.zip",
+    }));
+
+    const response = await handleApiData(
+      { method: "GET", url: "https://example.com/api/jobs/job-zip/download/file" },
+      { storage },
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-type")).toBe("application/zip");
+    expect(response.headers.get("content-disposition")).toContain("filename*=UTF-8''");
+  });
+
   it("returns job not ready for download metadata before processing", async () => {
     const { objectKey, storage } = await uploadFixture();
     const jobId = await createJob(objectKey, storage);

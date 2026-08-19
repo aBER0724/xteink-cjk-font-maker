@@ -10,7 +10,7 @@ const DEFAULT_TIMEOUT_MS = 15 * 60 * 1000;
 const STDERR_LIMIT = 64 * 1024;
 
 export interface CpfontProgress {
-  phase: "preparing" | "rasterizing" | "validating";
+  phase: "preparing" | "rasterizing" | "validating" | "packaging";
   percent: number;
   done: number;
   total: number;
@@ -122,6 +122,7 @@ export async function runCpfontConversion(input: CpfontConversionInput): Promise
   const tempRoot = await mkdtemp(path.join(os.tmpdir(), "crosspoint-cpfont-"));
   const outputDir = path.join(tempRoot, "output");
   const inputPath = path.join(tempRoot, `input${extensionForSource(input.sourceName)}`);
+  const canonicalOutputDir = path.resolve(outputDir);
   const run = input.spawn ?? spawnProcess;
   let keepOutput = false;
   try {
@@ -172,8 +173,11 @@ export async function runCpfontConversion(input: CpfontConversionInput): Promise
       outputDir,
       inputPath,
       async readFile(name: string) {
-        const file = path.join(outputDir, name);
-        if (path.dirname(file) !== outputDir) {
+        if (path.basename(name) !== name) {
+          throw new CpfontRunnerError("ERR_CPFONT_OUTPUT_INVALID", "unsafe output filename");
+        }
+        const file = path.resolve(outputDir, name);
+        if (path.dirname(file) !== canonicalOutputDir) {
           throw new CpfontRunnerError("ERR_CPFONT_OUTPUT_INVALID", "unsafe output filename");
         }
         return new Uint8Array(await readFile(file));

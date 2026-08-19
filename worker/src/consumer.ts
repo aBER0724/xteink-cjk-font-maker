@@ -189,6 +189,13 @@ export async function processOneJob(msg: QueueMessage, env: ConsumerEnv): Promis
       try {
         await progressWrite;
         const fallbackBytes = await readFile(env.cpfontCapability.fallbackPath);
+        progressWrite = progressWrite.then(() => persistJobProgress(env.storage, msg.job_id, msg, {
+          phase: "packaging",
+          percent: 92,
+          done: 92,
+          total: 100,
+        }));
+        await progressWrite;
         const packageResult = await buildCpfontPackage({
           conversion,
           familyName: msg.family_name,
