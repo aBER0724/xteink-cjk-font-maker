@@ -5,6 +5,7 @@ import { pathToFileURL } from "node:url";
 import { createFileSystemStorage, readJsonObject, type AppStorage } from "../worker/src/storage.js";
 import { processOneJob, type QueueMessage } from "../worker/src/consumer.js";
 import { handleApiData } from "../worker/src/api.js";
+import { detectCpfontToolkit } from "../worker/src/cpfont/toolkit.js";
 
 const DEFAULT_PORT = 3000;
 
@@ -64,7 +65,7 @@ async function buildQueueMessage(storage: AppStorage, jobId: string): Promise<Qu
   };
 }
 
-async function scheduleQueuedJob(storage: AppStorage, jobId: string): Promise<boolean> {
+async function scheduleQueuedJob(storage: AppStorage, jobId: string, cpfontCapability: Awaited<ReturnType<typeof detectCpfontToolkit>>): Promise<boolean> {
   if (scheduledJobs.has(jobId)) {
     return false;
   }
@@ -76,7 +77,7 @@ async function scheduleQueuedJob(storage: AppStorage, jobId: string): Promise<bo
 
   scheduledJobs.add(jobId);
   setImmediate(() => {
-    void processOneJob(job, { storage })
+    void processOneJob(job, { storage, cpfontCapability })
       .catch(() => {
         return undefined;
       })
@@ -129,6 +130,7 @@ function isFrontendRoutePath(pathname: string): boolean {
 export function createServer(options: ServerOptions = {}) {
   const storage = createFileSystemStorage(options.storageRoot ?? path.resolve(process.cwd(), ".data"));
   const staticRoot = options.staticRoot ?? path.resolve(process.cwd(), "web/dist");
+  const cpfontCapabilityPromise = detectCpfontToolkit();
 
   return createNodeServer(async (request, response) => {
     try {
@@ -151,13 +153,13 @@ export function createServer(options: ServerOptions = {}) {
             headers: request.headers as Record<string, string | string[] | undefined>,
             body: await readRequestBody(request),
           },
-          { storage }
+          { storage, cpfontCapability: await cpfontCapabilityPromise }
         );
 
         if (method === "POST" && url.pathname === "/api/jobs" && apiResponse.status === 202) {
           const created = JSON.parse(Buffer.from(await apiResponse.arrayBuffer()).toString("utf8")) as { job_id?: string };
           if (created.job_id) {
-            await scheduleQueuedJob(storage, created.job_id);
+            await scheduleQueuedJob(storage, created.job_id, await cpfontCapabilityPromise);
           }
 
           response.statusCode = apiResponse.status;

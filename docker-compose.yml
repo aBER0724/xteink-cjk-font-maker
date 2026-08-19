@@ -2,6 +2,8 @@ services:
   app:
     build:
       context: .
+      args:
+        CPFONT_TOOL_COMMIT: c242803dbd47f13fa5886bf0701db72871709d23
     ports:
       - "3000:3000"
     environment:

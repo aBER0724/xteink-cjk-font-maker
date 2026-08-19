@@ -1,4 +1,6 @@
 import { createMemoryStorage, type AppStorage } from "./storage.js";
+import { CPFONT_PHYSICAL_SIZES, CPFONT_VERSION, type CpfontCapability, type OutputFormat } from "./cpfont/types.js";
+import { isValidCpfontFamilyName } from "./cpfont/toolkit.js";
 
 interface JobRequestPayload {
   font_object_key: string;
@@ -9,9 +11,11 @@ interface JobRequestPayload {
   line_spacing_px?: number;
   output_width_px?: number;
   output_height_px?: number;
-  output_format?: "legacy-bin" | "xbf2";
+  output_format?: OutputFormat;
   compat_flip_y?: boolean;
   font_name?: string;
+  family_name?: string;
+  force_autohint?: boolean;
 }
 
 interface JobState {
@@ -38,10 +42,11 @@ interface ApiRequest {
 
 export interface ApiHandlerOptions {
   storage: AppStorage;
+  cpfontCapability?: CpfontCapability;
 }
 
 const fallbackStorage = createMemoryStorage();
-const SUPPORTED_OUTPUT_FORMATS = new Set(["legacy-bin", "xbf2"]);
+const SUPPORTED_OUTPUT_FORMATS = new Set<OutputFormat>(["legacy-bin", "xbf2", "cpfont-v4"]);
 const lastKnownJobStates = new WeakMap<AppStorage, Map<string, JobState>>();
 
 function getLastKnownJobStates(storage: AppStorage): Map<string, JobState> {
@@ -126,7 +131,7 @@ function binary(data: Uint8Array, filename: string): Response {
   return new Response(body, {
     status: 200,
     headers: {
-      "content-type": "application/octet-stream",
+      "content-type": filename.toLowerCase().endsWith(".zip") ? "application/zip" : "application/octet-stream",
       "content-disposition": buildContentDisposition(filename),
       ...corsHeaders(),
     },
@@ -161,6 +166,21 @@ export async function handleApiData(request: ApiRequest, options: ApiHandlerOpti
 
   if (request.method === "OPTIONS" && pathname.startsWith("/api/")) {
     return new Response(null, { status: 204, headers: corsHeaders() });
+  }
+
+  if (request.method === "GET" && pathname === "/api/capabilities") {
+    const capability = options.cpfontCapability ?? {
+      available: false,
+      version: CPFONT_VERSION,
+      sizes: CPFONT_PHYSICAL_SIZES,
+      reason: "ERR_CPFONT_TOOL_MISSING" as const,
+    };
+    return json({
+      cpfont: capability.available
+        ? { available: true, version: capability.version, sizes: capability.sizes }
+        : { available: false, version: capability.version, sizes: capability.sizes, reason: capability.reason },
+      legacyFormats: ["legacy-bin", "xbf2"],
+    });
   }
 
   if (request.method === "POST" && pathname === "/api/upload-url") {
@@ -199,6 +219,15 @@ export async function handleApiData(request: ApiRequest, options: ApiHandlerOpti
     }
     if (payload.output_format !== undefined && !SUPPORTED_OUTPUT_FORMATS.has(payload.output_format)) {
       return json({ code: "ERR_INVALID_OUTPUT_FORMAT" }, 400);
+    }
+    if (payload.output_format === "cpfont-v4") {
+      if (!isValidCpfontFamilyName(payload.family_name)) {
+        return json({ code: "ERR_INVALID_FAMILY_NAME" }, 400);
+      }
+      const capability = options.cpfontCapability;
+      if (!capability?.available) {
+        return json({ code: capability?.reason ?? "ERR_CPFONT_TOOL_MISSING" }, 503);
+      }
     }
 
     const jobId = nextJobId();

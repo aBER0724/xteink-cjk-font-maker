@@ -47,7 +47,7 @@ async function request(path: string, init?: RequestInit, options?: { storageRoot
 async function waitForJobDone(fetchFromServer: (path: string, init?: RequestInit) => Promise<Response>, jobId: string) {
   let sawExistingJob = false;
 
-  for (let attempt = 0; attempt < 50; attempt += 1) {
+  for (let attempt = 0; attempt < 100; attempt += 1) {
     const statusResponse = await fetchFromServer(`/api/jobs/${jobId}`);
     if (statusResponse.status === 404 && !sawExistingJob) {
       await new Promise((resolve) => setTimeout(resolve, 10));

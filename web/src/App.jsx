@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import opentype from "opentype.js";
+import { fetchFontCatalog } from "../catalog.js";
 import {
   buildPreviewModel,
   DEVICE_PROFILE,
@@ -18,6 +20,9 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 
 const DEFAULT_PREVIEW_TEXT = getI18nCopy("zh").previewTextDefault;
+const MAX_UPLOAD_BYTES = 20 * 1024 * 1024;
+const FONT_CATALOG_URL = import.meta.env.VITE_FONT_CATALOG_URL || "https://aber0724.github.io/crosspoint-cjk-fonts/catalog.json";
+const FONT_CATALOG_PAGE_URL = import.meta.env.VITE_FONT_CATALOG_PAGE_URL || "https://aber0724.github.io/crosspoint-cjk-fonts/";
 const CONVERSION_HISTORY_STORAGE_KEY = "xteink-conversion-history-v1";
 const THEME_STORAGE_KEY = "xteink-theme-mode-v1";
 const LOCALE_OPTIONS = [
@@ -363,6 +368,73 @@ function createHistoryPreviewDataUrl(canvas) {
   }
 }
 
+function normalizeFamilyId(value) {
+  const normalized = String(value ?? "")
+    .normalize("NFKD")
+    .replace(/[^A-Za-z0-9_-]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .slice(0, 64);
+  return normalized || "font";
+}
+
+function localizedFontName(font) {
+  const names = font?.names?.preferredFamily || font?.names?.fontFamily || font?.names?.fullName || {};
+  return names.zh || names.ja || names.en || Object.values(names)[0] || "font";
+}
+
+function CatalogPanel({ copy, catalog, error }) {
+  const [query, setQuery] = useState("");
+  const [previewSize, setPreviewSize] = useState("14");
+  const filtered = useMemo(() => {
+    if (!catalog) return [];
+    const needle = query.trim().toLocaleLowerCase();
+    return catalog.families.filter((family) => !needle || `${family.name} ${family.description}`.toLocaleLowerCase().includes(needle));
+  }, [catalog, query]);
+
+  if (error) {
+    return (
+      <Card className="border-border">
+        <CardContent className="grid gap-4 p-6 text-sm text-muted-foreground">
+          <p>{copy.catalogError}</p>
+          <a className="font-medium text-foreground underline" href={FONT_CATALOG_PAGE_URL} target="_blank" rel="noreferrer">{copy.catalogOpen}</a>
+        </CardContent>
+      </Card>
+    );
+  }
+  if (!catalog) return <p className="p-6 text-sm text-muted-foreground">{copy.catalogLoading}</p>;
+
+  return (
+    <div className="grid gap-5">
+      <div className="flex flex-col gap-3 sm:flex-row">
+        <Input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={copy.catalogSearch} />
+        <select className="h-10 rounded-md border border-input bg-background px-3 text-sm" value={previewSize} onChange={(event) => setPreviewSize(event.target.value)}>
+          {catalog.previewSizes.map((size) => <option key={size} value={String(size)}>{size} pt</option>)}
+        </select>
+        <a className="inline-flex h-10 items-center justify-center rounded-md border border-border px-4 text-sm font-medium" href={FONT_CATALOG_PAGE_URL} target="_blank" rel="noreferrer">{copy.catalogOpen}</a>
+      </div>
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+        {filtered.map((family) => (
+          <Card key={family.name} className="overflow-hidden border-border">
+            <CardHeader className="pb-3">
+              <div className="flex items-start justify-between gap-3">
+                <div><CardTitle className="text-lg">{family.name}</CardTitle><CardDescription className="mt-1">{family.description}</CardDescription></div>
+                <span className="rounded border border-border px-2 py-1 text-[10px] uppercase text-muted-foreground">{family.licenseStatus}</span>
+              </div>
+            </CardHeader>
+            <CardContent className="grid gap-3">
+              <img src={family.previews[previewSize]} alt={`${family.name} ${previewSize} pt`} className="w-full border border-border bg-white" loading="lazy" />
+              <p className="text-xs text-muted-foreground">{[...family.languages, family.category, family.license].filter(Boolean).join(" · ")}</p>
+              <div className="grid grid-cols-4 gap-1">
+                {family.files.map((file) => <a key={file.name} className="rounded border border-border px-2 py-1 text-center text-xs hover:border-primary" href={file.downloadUrl}>{file.physicalSize} pt</a>)}
+              </div>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export function App() {
   const [locale, setLocale] = useState("zh");
   const [themeMode, setThemeMode] = useState(() => {
@@ -382,12 +454,18 @@ export function App() {
     return window.matchMedia("(prefers-color-scheme: dark)").matches;
   });
   const [fontFile, setFontFile] = useState(null);
+  const [activeSection, setActiveSection] = useState("make");
+  const [catalog, setCatalog] = useState(null);
+  const [catalogError, setCatalogError] = useState(false);
+  const [cpfontCapability, setCpfontCapability] = useState(null);
+  const [familyName, setFamilyName] = useState("font");
+  const [forceAutohint, setForceAutohint] = useState(false);
   const [tier, setTier] = useState("65k");
   const [fontSizePx, setFontSizePx] = useState(28);
   const [fontWeight, setFontWeight] = useState(FONT_WEIGHT_BASE);
   const [outputWidthPx, setOutputWidthPx] = useState(33);
   const [outputHeightPx, setOutputHeightPx] = useState(39);
-  const [outputFormat, setOutputFormat] = useState("legacy-bin");
+  const [outputFormat, setOutputFormat] = useState("cpfont-v4");
   const [deviceColor, setDeviceColor] = useState("black");
   const [displayMode, setDisplayMode] = useState("light");
   const [previewText, setPreviewText] = useState(DEFAULT_PREVIEW_TEXT);
@@ -441,6 +519,38 @@ export function App() {
       mediaQuery.removeListener(handleChange);
     };
   }, []);
+
+  useEffect(() => {
+    setOutputFormat(activeSection === "legacy" ? "legacy-bin" : "cpfont-v4");
+    setStatus({ type: "idle", detail: "" });
+    setDownloadUrl("");
+    setDownloadName("");
+  }, [activeSection]);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchFontCatalog(FONT_CATALOG_URL)
+      .then((value) => { if (!cancelled) { setCatalog(value); setCatalogError(false); } })
+      .catch(() => { if (!cancelled) setCatalogError(true); });
+    fetch("/api/capabilities")
+      .then((response) => response.ok ? response.json() : Promise.reject(new Error("capabilities")))
+      .then((value) => { if (!cancelled) setCpfontCapability(value.cpfont); })
+      .catch(() => { if (!cancelled) setCpfontCapability({ available: false, reason: "ERR_CPFONT_TOOL_MISSING" }); });
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
+    if (!fontFile) {
+      setFamilyName("font");
+      return;
+    }
+    let cancelled = false;
+    fontFile.arrayBuffer()
+      .then((buffer) => opentype.parse(buffer))
+      .then((font) => { if (!cancelled) setFamilyName(normalizeFamilyId(localizedFontName(font))); })
+      .catch(() => { if (!cancelled) setFamilyName(normalizeFamilyId(fontFile.name.replace(/\.[^.]+$/, ""))); });
+    return () => { cancelled = true; };
+  }, [fontFile]);
 
   useEffect(() => {
     if (typeof window !== "undefined") {
@@ -660,6 +770,18 @@ export function App() {
       setStatus({ type: "failed", detail: copy.statusFontRequired });
       return;
     }
+    if (fontFile.size > MAX_UPLOAD_BYTES) {
+      setStatus({ type: "failed", detail: copy.fileLimit });
+      return;
+    }
+    if (outputFormat === "cpfont-v4" && !/^[A-Za-z0-9_-]{1,64}$/.test(familyName)) {
+      setStatus({ type: "failed", detail: copy.familyName });
+      return;
+    }
+    if (outputFormat === "cpfont-v4" && cpfontCapability?.available === false) {
+      setStatus({ type: "failed", detail: cpfontCapability.reason || "ERR_CPFONT_TOOL_MISSING" });
+      return;
+    }
 
     setStatus({ type: "submitting", detail: "" });
     setProgressPercent(0);
@@ -676,6 +798,8 @@ export function App() {
         outputWidthPx,
         outputHeightPx,
         outputFormat,
+        familyName,
+        forceAutohint,
         compatFlipY: true,
       }, undefined, undefined, (progress) => {
         setProgressPercent(progress.percent);
@@ -684,14 +808,14 @@ export function App() {
       setStatus({ type: "done", detail: result.jobId });
       setProgressPercent(100);
       setDownloadUrl(result.downloadUrl);
-      setDownloadName(result.outputName || `${result.jobId}.bin`);
+      setDownloadName(result.outputName || (outputFormat === "cpfont-v4" ? `${familyName}_cpfont-v4.zip` : `${result.jobId}.bin`));
       setNowTimestamp(Date.now());
       const historyPreviewDataUrl = createHistoryPreviewDataUrl(previewCanvasRef.current);
       setConversionHistory((previous) => [
         {
           id: result.jobId,
           fontName: fontFile.name,
-          outputName: result.outputName || `${result.jobId}.bin`,
+          outputName: result.outputName || (outputFormat === "cpfont-v4" ? `${familyName}_cpfont-v4.zip` : `${result.jobId}.bin`),
           downloadUrl: result.downloadUrl,
           previewImageDataUrl: historyPreviewDataUrl,
           tier,
@@ -789,7 +913,17 @@ export function App() {
               </div>
             </div>
           </CardHeader>
+          <div className="mb-5 flex flex-wrap gap-2 px-6">
+            {[
+              ["library", copy.fontLibrary],
+              ["make", copy.makeCpfont],
+              ["legacy", copy.legacyTools],
+            ].map(([value, label]) => (
+              <Button key={value} type="button" variant={activeSection === value ? "default" : "outline"} onClick={() => setActiveSection(value)}>{label}</Button>
+            ))}
+          </div>
         <CardContent>
+            {activeSection === "library" ? <CatalogPanel copy={copy} catalog={catalog} error={catalogError} /> : (
             <div className="grid min-w-0 justify-center gap-5 xl:grid-cols-[380px_420px_380px]">
               <Card className="order-2 min-w-0 border-border">
                 <CardHeader className="pb-3">
@@ -825,8 +959,29 @@ export function App() {
                           <span className="hidden shrink-0 text-xs text-muted-foreground sm:inline">{copy.supportedFontFormats}</span>
                         </div>
                       </div>
+                      <p className="text-xs text-muted-foreground">{copy.fileLimit}</p>
                     </div>
 
+                    {activeSection === "make" ? (
+                      <>
+                        <div className="grid gap-2">
+                          <Label htmlFor="family-name">{copy.familyName}</Label>
+                          <Input id="family-name" value={familyName} onChange={(event) => setFamilyName(normalizeFamilyId(event.target.value))} />
+                        </div>
+                        <div className="rounded-md border border-border bg-muted/30 p-3 text-xs leading-relaxed text-muted-foreground">
+                          <p>{copy.outputFormatCpfont}</p>
+                          <p>{copy.cpfontSizes}</p>
+                          <p>{copy.cpfontIntervals}</p>
+                        </div>
+                        <label className="flex items-center gap-2 text-sm">
+                          <input type="checkbox" checked={forceAutohint} onChange={(event) => setForceAutohint(event.target.checked)} />
+                          {copy.forceAutohint}
+                        </label>
+                      </>
+                    ) : null}
+
+                    {activeSection === "legacy" ? (
+                    <>
                     <div className="grid gap-2">
                       <Label>{copy.charsetTier}</Label>
                       <div
@@ -950,6 +1105,8 @@ export function App() {
                         />
                       </div>
                     </div>
+                    </>
+                    ) : null}
 
                     <div className="grid gap-2">
                       <Label htmlFor="preview-text">{copy.previewText}</Label>
@@ -961,10 +1118,14 @@ export function App() {
                       />
                     </div>
 
+                    {activeSection === "legacy" ? (
+                    <>
                     <p className="text-xs leading-relaxed text-muted-foreground">
                       {copy.estimatedFileSize}: {estimatedSizeText}
                     </p>
                     <p className="text-xs leading-relaxed text-muted-foreground/80">{copy.estimatedFileSizeHint}</p>
+                    </>
+                    ) : null}
 
                     <Button type="submit" className="w-full">
                       {copy.startConversion}
@@ -992,6 +1153,7 @@ export function App() {
                 <CardHeader className="pb-3">
                   <CardTitle className="text-base">{copy.devicePreview}</CardTitle>
                   <CardDescription id="device-meta">{formatDeviceMeta(copy.deviceMetaPrefix)}</CardDescription>
+                  <p className="text-xs leading-relaxed text-muted-foreground">{copy.previewApproximate}</p>
                 </CardHeader>
                 <CardContent className="min-w-0">
                   <div
@@ -1168,6 +1330,7 @@ export function App() {
                 </CardContent>
               </Card>
             </div>
+            )}
         </CardContent>
       </div>
 

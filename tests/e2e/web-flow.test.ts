@@ -4,7 +4,7 @@ import { runWebFlow } from "../../web/app";
 describe("web flow", () => {
   it("uploads a font, submits job, and shows download when done", async () => {
     const calls: string[] = [];
-    let jobBody: { font_weight?: number; output_format?: string } | null = null;
+    let jobBody: { font_weight?: number; output_format?: string; family_name?: string; force_autohint?: boolean } | null = null;
 
     const apiRequest = async (path: string, init?: RequestInit): Promise<unknown> => {
       calls.push(path);
@@ -20,6 +20,8 @@ describe("web flow", () => {
         jobBody = JSON.parse(String(init?.body ?? "{}")) as {
           font_weight?: number;
           output_format?: string;
+          family_name?: string;
+          force_autohint?: boolean;
         };
         return { job_id: "job-1" };
       }
@@ -62,6 +64,33 @@ describe("web flow", () => {
     ]);
     expect(jobBody?.font_weight).toBe(700);
     expect(jobBody?.output_format).toBe("xbf2");
+  });
+
+  it("submits cpfont v4 family metadata without legacy geometry requirements", async () => {
+    let body: Record<string, unknown> = {};
+    const apiRequest = async (path: string, init?: RequestInit): Promise<unknown> => {
+      if (path === "/api/upload-url") return { upload_url: "/api/uploads?object_key=uploads%2Fsample.ttf", object_key: "uploads/sample.ttf" };
+      if (path === "/api/jobs") { body = JSON.parse(String(init?.body)); return { job_id: "job-cpfont" }; }
+      if (path === "/api/jobs/job-cpfont") return { status: "done", progress: { phase: "done", percent: 100 } };
+      if (path === "/api/jobs/job-cpfont/download") return { download_url: "/api/jobs/job-cpfont/download/file", output_name: "ExampleCJK_cpfont-v4.zip" };
+      throw new Error(`unexpected path: ${path}`);
+    };
+
+    await runWebFlow({
+      fileName: "Example CJK.ttf",
+      fileData: new Uint8Array([1]),
+      outputFormat: "cpfont-v4",
+      familyName: "ExampleCJK",
+      forceAutohint: true,
+    }, apiRequest, async () => undefined);
+
+    expect(body).toMatchObject({
+      font_object_key: "uploads/sample.ttf",
+      output_format: "cpfont-v4",
+      family_name: "ExampleCJK",
+      force_autohint: true,
+      font_name: "Example CJK.ttf",
+    });
   });
 
   it("emits progress updates during conversion flow", async () => {

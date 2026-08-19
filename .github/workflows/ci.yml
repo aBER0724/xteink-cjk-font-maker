@@ -1,0 +1,46 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - run: npm run build
+
+  docker:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build production image
+        run: docker build --tag crosspoint-cjk-font-maker:ci .
+      - name: Verify cpfont capability
+        shell: bash
+        run: |
+          docker run --detach --rm --name font-maker-ci -p 3000:3000 crosspoint-cjk-font-maker:ci
+          trap 'docker stop font-maker-ci >/dev/null 2>&1 || true' EXIT
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent http://127.0.0.1:3000/api/capabilities > capabilities.json; then
+              break
+            fi
+            sleep 1
+          done
+          grep -q '"available":true' capabilities.json
+          grep -q '"version":4' capabilities.json
+          grep -q '"sizes":\[8,10,12,14,16,18,22\]' capabilities.json

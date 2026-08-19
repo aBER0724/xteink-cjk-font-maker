@@ -7,8 +7,6 @@ describe("docker-compose.dev.yml", () => {
     const compose = readFileSync(resolve(process.cwd(), "docker-compose.dev.yml"), "utf8");
 
     expect(compose).not.toContain("worker/src/types.ts");
-    expect(compose).toContain("worker/src/api.ts");
-    expect(compose).toContain("worker/src/consumer.ts");
-    expect(compose).toContain("worker/src/storage.ts");
+    expect(compose).toContain('"worker/src/**/*.ts"');
   });
 });
