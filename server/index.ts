@@ -65,7 +65,7 @@ async function buildQueueMessage(storage: AppStorage, jobId: string): Promise<Qu
   };
 }
 
-async function scheduleQueuedJob(storage: AppStorage, jobId: string): Promise<boolean> {
+async function scheduleQueuedJob(storage: AppStorage, jobId: string, cpfontCapability: Awaited<ReturnType<typeof detectCpfontToolkit>>): Promise<boolean> {
   if (scheduledJobs.has(jobId)) {
     return false;
   }
@@ -77,7 +77,7 @@ async function scheduleQueuedJob(storage: AppStorage, jobId: string): Promise<bo
 
   scheduledJobs.add(jobId);
   setImmediate(() => {
-    void processOneJob(job, { storage })
+    void processOneJob(job, { storage, cpfontCapability })
       .catch(() => {
         return undefined;
       })
@@ -159,7 +159,7 @@ export function createServer(options: ServerOptions = {}) {
         if (method === "POST" && url.pathname === "/api/jobs" && apiResponse.status === 202) {
           const created = JSON.parse(Buffer.from(await apiResponse.arrayBuffer()).toString("utf8")) as { job_id?: string };
           if (created.job_id) {
-            await scheduleQueuedJob(storage, created.job_id);
+            await scheduleQueuedJob(storage, created.job_id, await cpfontCapabilityPromise);
           }
 
           response.statusCode = apiResponse.status;

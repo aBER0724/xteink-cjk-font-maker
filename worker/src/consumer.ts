@@ -1,7 +1,11 @@
+import { createHash } from "node:crypto";
+import { readFile } from "node:fs/promises";
 import { convertFontToBin, type ConvertProgress } from "./converter.js";
 import { buildOutputName } from "./file-name.js";
+import { buildCpfontPackage } from "./cpfont/package.js";
+import { cleanupCpfontConversion, runCpfontConversion } from "./cpfont/runner.js";
+import type { CpfontCapability, OutputFormat } from "./cpfont/types.js";
 import { readJsonObject, writeJsonObject, type AppStorage } from "./storage.js";
-import type { OutputFormat } from "./cpfont/types.js";
 
 export interface QueueMessage {
   job_id: string;
@@ -42,6 +46,8 @@ export interface JobResult {
 
 export interface ConsumerEnv {
   storage: AppStorage;
+  cpfontCapability?: CpfontCapability;
+  runCpfont?: typeof runCpfontConversion;
 }
 
 function outputNameForJob(msg: QueueMessage): string {
@@ -50,7 +56,7 @@ function outputNameForJob(msg: QueueMessage): string {
     .trim() || "download";
   const width = msg.output_width_px ?? msg.letter_spacing_px ?? 33;
   const height = msg.output_height_px ?? msg.line_spacing_px ?? 39;
-  return buildOutputName(baseName, msg.font_size_px, width, height, msg.output_format);
+  return buildOutputName(baseName, msg.font_size_px, width, height, msg.output_format === "cpfont-v4" ? "legacy-bin" : msg.output_format);
 }
 
 async function writeJobState(storage: AppStorage, jobId: string, state: PersistedJobState): Promise<void> {
@@ -161,6 +167,55 @@ export async function processOneJob(msg: QueueMessage, env: ConsumerEnv): Promis
     const fontBytes = await env.storage.readUpload(msg.font_object_key);
     if (!fontBytes) {
       throw new Error(`missing font object: ${msg.font_object_key}`);
+    }
+
+    if (msg.output_format === "cpfont-v4") {
+      if (!msg.family_name) {
+        throw new Error("missing cpfont family name");
+      }
+      if (!env.cpfontCapability?.available || !env.cpfontCapability.fallbackPath || !env.cpfontCapability.provenance) {
+        throw new Error(env.cpfontCapability?.reason ?? "ERR_CPFONT_TOOL_MISSING");
+      }
+      const conversion = await (env.runCpfont ?? runCpfontConversion)({
+        capability: env.cpfontCapability,
+        fontData: fontBytes,
+        sourceName: msg.font_name ?? "font.ttf",
+        familyName: msg.family_name,
+        forceAutohint: msg.force_autohint,
+        onProgress: (progress) => {
+          progressWrite = progressWrite.then(() => persistJobProgress(env.storage, msg.job_id, msg, progress));
+        },
+      });
+      try {
+        await progressWrite;
+        const fallbackBytes = await readFile(env.cpfontCapability.fallbackPath);
+        const packageResult = await buildCpfontPackage({
+          conversion,
+          familyName: msg.family_name,
+          sourceName: msg.font_name ?? "font.ttf",
+          sourceSha256: createHash("sha256").update(fontBytes).digest("hex"),
+          fallbackSha256: createHash("sha256").update(fallbackBytes).digest("hex"),
+          forceAutohint: msg.force_autohint === true,
+          toolkitRepository: env.cpfontCapability.provenance.repository,
+          toolkitCommit: env.cpfontCapability.provenance.commit,
+          pythonVersion: env.cpfontCapability.provenance.pythonVersion,
+          dependencies: env.cpfontCapability.provenance.dependencies,
+        });
+        const outputKey = `outputs/${msg.job_id}.zip`;
+        await env.storage.writeOutput(outputKey, packageResult.data);
+        await writeJobState(env.storage, msg.job_id, {
+          job_id: msg.job_id,
+          status: "done",
+          output_key: outputKey,
+          output_name: packageResult.name,
+          request: msg,
+          progress: { phase: "done", percent: 100, done: 1, total: 1 },
+        });
+        await env.storage.releaseJobClaim(msg.job_id);
+        return { status: "done", output_key: outputKey, output_name: packageResult.name };
+      } finally {
+        await cleanupCpfontConversion(conversion);
+      }
     }
 
     const out = await convertFontToBin(

@@ -1,6 +1,10 @@
 import { access, readFile } from "node:fs/promises";
 import path from "node:path";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import { CPFONT_PHYSICAL_SIZES, CPFONT_VERSION, type CpfontCapability, type CpfontCapabilityReason } from "./types.js";
+
+const execFileAsync = promisify(execFile);
 
 interface ToolkitDetectionOptions {
   env?: NodeJS.ProcessEnv | Record<string, string | undefined>;
@@ -33,6 +37,25 @@ function candidateRoot(options: ToolkitDetectionOptions): string {
   return path.resolve(options.cwd ?? process.cwd(), "..", "crosspoint-cjk-fonts");
 }
 
+function parsePinnedDependencies(source: string): Record<string, string> {
+  return Object.fromEntries(
+    source
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter((line) => /^[A-Za-z0-9_.-]+==[^=]+$/.test(line))
+      .map((line) => line.split("==", 2) as [string, string]),
+  );
+}
+
+async function bestEffortCommand(command: string, args: string[], cwd: string): Promise<string> {
+  try {
+    const { stdout, stderr } = await execFileAsync(command, args, { cwd, timeout: 5_000, windowsHide: true });
+    return (stdout || stderr).trim();
+  } catch {
+    return "unknown";
+  }
+}
+
 export async function detectCpfontToolkit(options: ToolkitDetectionOptions = {}): Promise<CpfontCapability> {
   const root = candidateRoot(options);
   const converterPath = path.join(root, "scripts", "fontconvert_sdcard.py");
@@ -53,6 +76,13 @@ export async function detectCpfontToolkit(options: ToolkitDetectionOptions = {})
     return unavailable("ERR_CPFONT_FALLBACK_MISSING");
   }
 
+  const pythonPath = (options.env ?? process.env).CPFONT_PYTHON || (process.platform === "win32" ? "python" : "python3");
+  const requirements = parsePinnedDependencies(await readFile(requirementsPath, "utf8"));
+  const [commit, pythonVersion] = await Promise.all([
+    bestEffortCommand("git", ["rev-parse", "HEAD"], root),
+    bestEffortCommand(pythonPath, ["--version"], root),
+  ]);
+
   return {
     available: true,
     version: CPFONT_VERSION,
@@ -60,7 +90,13 @@ export async function detectCpfontToolkit(options: ToolkitDetectionOptions = {})
     root,
     converterPath,
     fallbackPath,
-    pythonPath: (options.env ?? process.env).CPFONT_PYTHON || (process.platform === "win32" ? "python" : "python3"),
+    pythonPath,
+    provenance: {
+      repository: "https://github.com/aBER0724/crosspoint-cjk-fonts",
+      commit,
+      pythonVersion,
+      dependencies: requirements,
+    },
   };
 }
 

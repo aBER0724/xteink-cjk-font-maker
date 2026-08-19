@@ -131,7 +131,7 @@ function binary(data: Uint8Array, filename: string): Response {
   return new Response(body, {
     status: 200,
     headers: {
-      "content-type": "application/octet-stream",
+      "content-type": filename.toLowerCase().endsWith(".zip") ? "application/zip" : "application/octet-stream",
       "content-disposition": buildContentDisposition(filename),
       ...corsHeaders(),
     },

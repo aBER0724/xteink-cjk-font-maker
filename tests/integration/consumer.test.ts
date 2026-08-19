@@ -1,10 +1,12 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { access, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { processOneJob } from "../../worker/src/consumer";
 import { createFileSystemStorage, createMemoryStorage } from "../../worker/src/storage";
 import * as converterModule from "../../worker/src/converter";
 import type { ConvertOutput } from "../../worker/src/converter";
+import type { CpfontConversionResult } from "../../worker/src/cpfont/runner";
+import { unzipSync } from "fflate";
 import { buildTestFontBytes } from "../helpers/font-fixture";
 
 const tempDirs: string[] = [];
@@ -21,6 +23,58 @@ async function createTempDir() {
 }
 
 describe("processOneJob", () => {
+  it("packages a cpfont-v4 job as a seven-size ZIP", async () => {
+    const storage = createMemoryStorage();
+    const fontBytes = buildTestFontBytes();
+    await storage.writeUpload("uploads/sample.ttf", fontBytes);
+    const request = {
+      job_id: "job-cpfont",
+      font_object_key: "uploads/sample.ttf",
+      tier: "6k" as const,
+      font_size_px: 28,
+      output_format: "cpfont-v4" as const,
+      family_name: "ExampleCJK",
+      font_name: "Example CJK.ttf",
+    };
+    await storage.writeJob("job-cpfont", JSON.stringify({ job_id: "job-cpfont", status: "queued", request }));
+    const fallbackDir = await createTempDir();
+    const conversionRoot = await createTempDir();
+    const fallbackPath = `${fallbackDir}/fallback.ttf`;
+    await writeFile(fallbackPath, "fallback");
+    let cleaned = false;
+    const files = [8, 10, 12, 14, 16, 18, 22].map((physicalSize) => ({
+      name: `ExampleCJK_${physicalSize}.cpfont`, physicalSize, byteSize: 1, sha256: `${physicalSize}`.padStart(64, "0"),
+    }));
+    const conversion: CpfontConversionResult = {
+      files, outputDir: `${conversionRoot}/output`, inputPath: `${conversionRoot}/input.ttf`,
+      async readFile(name) { return new Uint8Array([Number(name.match(/_(\d+)\.cpfont$/)?.[1])]); },
+    };
+
+    const result = await processOneJob(request, {
+      storage,
+      cpfontCapability: {
+        available: true, version: 4, sizes: [8, 10, 12, 14, 16, 18, 22], root: fallbackDir,
+        converterPath: "converter.py", fallbackPath, pythonPath: "python",
+        provenance: { repository: "https://github.com/aBER0724/crosspoint-cjk-fonts", commit: "abc", pythonVersion: "3.11", dependencies: {} },
+      },
+      runCpfont: async (input) => {
+        input.onProgress?.({ phase: "preparing", percent: 5, done: 5, total: 100 });
+        input.onProgress?.({ phase: "rasterizing", percent: 10, done: 10, total: 100 });
+        input.onProgress?.({ phase: "validating", percent: 85, done: 85, total: 100 });
+        const originalRead = conversion.readFile;
+        return { ...conversion, async readFile(name) { return originalRead(name); } };
+      },
+    });
+
+    expect(result).toEqual({ status: "done", output_key: "outputs/job-cpfont.zip", output_name: "ExampleCJK_cpfont-v4.zip" });
+    const output = await storage.readOutput("outputs/job-cpfont.zip");
+    expect(output).not.toBeNull();
+    expect(Object.keys(unzipSync(output!))).toHaveLength(9);
+    const state = JSON.parse((await storage.readJob("job-cpfont"))!);
+    expect(state.progress.phase).toBe("done");
+    await expect(access(conversionRoot)).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
   it("processes a queued job in-process and exposes download metadata", async () => {
     const storage = createMemoryStorage();
     await storage.writeUpload("uploads/sample.ttf", buildTestFontBytes());

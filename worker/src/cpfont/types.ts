@@ -7,6 +7,13 @@ export type CpfontCapabilityReason =
   | "ERR_CPFONT_TOOL_VERSION"
   | "ERR_CPFONT_FALLBACK_MISSING";
 
+export interface CpfontToolkitProvenance {
+  repository: string;
+  commit: string;
+  pythonVersion: string;
+  dependencies: Record<string, string>;
+}
+
 export interface CpfontCapability {
   available: boolean;
   version: typeof CPFONT_VERSION;
@@ -16,4 +23,5 @@ export interface CpfontCapability {
   converterPath?: string;
   fallbackPath?: string;
   pythonPath?: string;
+  provenance?: CpfontToolkitProvenance;
 }

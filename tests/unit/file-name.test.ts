@@ -9,4 +9,8 @@ describe("buildOutputName", () => {
   it("generates xbf2 filename with xbf2 extension", () => {
     expect(buildOutputName("Yozai-Medium", 28, 25, 28, "xbf2")).toBe("Yozai-Medium_28_25x28.xbf2");
   });
+
+  it("generates a family ZIP filename for cpfont v4", () => {
+    expect(buildOutputName("Yozai-Medium", 28, 25, 28, "cpfont-v4")).toBe("Yozai-Medium_cpfont-v4.zip");
+  });
 });
