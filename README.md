@@ -1,98 +1,114 @@
 # xteink-cjk-font-maker
 
-Web font converter for generating `crosspoint-reader-cjk` compatible external font packages (`legacy-bin` and experimental `xbf2`).
+Web application for browsing published CrossPoint CJK fonts and generating the current `.cpfont v4` SD-card font package from a private `TTF/OTF` upload.
 
 [English](README.md) | [简体中文](README.zh.md) | [日本語](README.ja.md)
 
 ![Application screenshot](docs/xteink-home.png)
 
-## Features
+## Current format
 
-- Upload `TTF/OTF` font files
-- Choose charset tier: `6k`, `24k`, `65k`
-- Configure rendering params: `font_size_px`, `font_weight`, `output_width_px`, `output_height_px`
-- Choose export format: default `legacy-bin`, optional experimental `xbf2`
-- Async conversion workflow
-- PWA-capable web UI
+The primary conversion flow invokes the canonical Python/FreeType converter from [`aBER0724/crosspoint-cjk-fonts`](https://github.com/aBER0724/crosspoint-cjk-fonts). It produces a deterministic ZIP containing physical `.cpfont v4` files at:
 
-## Project Layout
-
-- Node server entry: `server/index.ts`
-- API logic: `worker/src/api.ts`
-- Background conversion helper: `worker/src/consumer.ts`
-- Web source: `web/`
-- Web build output: `web/dist`
-- Docker production image: `Dockerfile`
-- Docker development stack: `docker-compose.dev.yml`
-- Docker production stack: `docker-compose.yml`
-
-## Prerequisites
-
-- Node.js 20+
-- npm
-- Docker / Docker Compose (optional)
-
-## Local Development
-
-Install dependencies and run the test/build baseline first:
-
-```bash
-npm install
-npm test
-npm run build
+```text
+8 / 10 / 12 / 14 / 16 / 18 / 22 pt
 ```
 
-Run the full stack locally:
+The package also includes `SHA256SUMS` and `build.json` provenance. The device selects a physical file and does not scale CJK fonts at runtime.
+
+The previous `legacy-bin` and experimental `xbf2` converters remain under **Legacy Tools**. They are not the current SD-card catalog format.
+
+## Font Library
+
+The native React catalog reads:
+
+```text
+https://aber0724.github.io/crosspoint-cjk-fonts/catalog.json
+```
+
+It displays real `.cpfont` bitmap previews and links directly to the versioned GitHub Release. It does not proxy or re-host public font binaries. A catalog outage does not disable private conversion.
+
+## Features
+
+- Browse, search, preview, and download verified public families
+- Upload private `TTF/OTF` files up to 20 MiB
+- Generate `.cpfont v4` at seven physical sizes with optional FreeType auto-hinting
+- Download a ZIP with checksums and build provenance
+- Keep `legacy-bin` and experimental `xbf2` compatibility tools
+- Async jobs, conversion history, multilingual UI, and PWA support
+
+## Project layout
+
+- Node server: `server/index.ts`
+- API and job consumer: `worker/src/api.ts`, `worker/src/consumer.ts`
+- Canonical converter adapter: `worker/src/cpfont/`
+- React web app: `web/`
+- Production image: `Dockerfile`
+- Operations: `docs/ops/limits.md`
+
+## Local development
+
+Requirements:
+
+- Node.js 22
+- npm
+- Python 3.11
+- sibling checkout `../crosspoint-cjk-fonts`, or `CPFONT_TOOL_ROOT`
+
+Prepare the canonical toolkit once:
 
 ```bash
+cd ../crosspoint-cjk-fonts
+python -m pip install -r requirements.txt
+python scripts/fetch_fallback.py
+cd ../crosspoint-cjk-font-maker
+```
+
+Install and verify Font Maker:
+
+```bash
+npm ci
+npm test
+npm run build
 npm run dev
 ```
 
-This starts:
+Endpoints:
 
 - Node API: `http://127.0.0.1:3000`
-- Vite web app: `http://127.0.0.1:5173` (with `/api/*` proxy)
+- Vite app: `http://127.0.0.1:5173`
+- Capability check: `http://127.0.0.1:3000/api/capabilities`
 
-### Optional local variable
+Optional variables:
 
-- `VITE_API_PROXY_TARGET`
-  - Used by `web/vite.config.mjs`
-  - Default: `http://127.0.0.1:3000`
+- `CPFONT_TOOL_ROOT`: canonical toolkit checkout
+- `CPFONT_PYTHON`: Python executable with pinned toolkit dependencies
+- `VITE_API_PROXY_TARGET`: local API proxy target
+- `VITE_FONT_CATALOG_URL`: catalog JSON endpoint
+- `VITE_FONT_CATALOG_PAGE_URL`: standalone catalog page
 
-## Docker Development
+The browser upload preview uses the source font and is approximate. Real final-format examples in the Font Library are rendered from `.cpfont v4` 2-bit bitmap data.
 
-```bash
-docker compose -f docker-compose.dev.yml up --build
-```
-
-This starts:
-
-- Node API: `http://127.0.0.1:3000`
-- Vite web app: `http://127.0.0.1:5273`
-
-## Docker Production
+## Docker
 
 ```bash
 docker compose up --build
 ```
 
-This starts the production Node server on `http://127.0.0.1:3000` and serves the built frontend from `web/dist`.
+The production image uses Debian, Python virtualenv, the SHA-256-locked fallback, and a pinned `crosspoint-cjk-fonts` commit. Updating the toolchain pin is an explicit reviewed change.
 
-## PWA Support
-
-The web app supports installable PWA in production build:
-
-- Manifest: `web/public/manifest.webmanifest`
-- Service Worker: `web/public/sw.js`
-- Icons: `web/public/icon-192.png`, `web/public/icon-512.png`
-
-Verify locally:
+For the Vite + API development stack:
 
 ```bash
-npm run web:build
-npm run web:preview
+docker compose -f docker-compose.dev.yml up --build
 ```
 
-## Additional Docs
+## Verification
 
-- Operational limits: `docs/ops/limits.md`
+```bash
+npm test
+npm run build
+docker build -t crosspoint-cjk-font-maker .
+```
+
+CI also starts the production image and requires `/api/capabilities` to report `.cpfont` version 4 and all seven sizes.
