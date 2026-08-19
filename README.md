@@ -84,10 +84,9 @@ Optional variables:
 - `CPFONT_TOOL_ROOT`: canonical toolkit checkout
 - `CPFONT_PYTHON`: Python executable with pinned toolkit dependencies
 - `VITE_API_PROXY_TARGET`: local API proxy target
-- `VITE_FONT_CATALOG_URL`: catalog JSON endpoint
-- `VITE_FONT_CATALOG_PAGE_URL`: standalone catalog page
+- `VITE_FONT_CATALOG_PAGE_URL`: standalone catalog page opened by the Font Library link
 
-The browser upload preview uses the source font and is approximate. Real final-format examples in the Font Library are rendered from `.cpfont v4` 2-bit bitmap data.
+The browser upload preview uses the source font and is approximate. The Font Library opens the separately deployed catalog, so catalog UI updates do not require rebuilding or redeploying the Maker image.
 
 ## Docker
 

@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import opentype from "opentype.js";
-import { fetchFontCatalog } from "../catalog.js";
 import {
   buildPreviewModel,
   DEVICE_PROFILE,
@@ -21,7 +20,6 @@ import { Textarea } from "@/components/ui/textarea";
 
 const DEFAULT_PREVIEW_TEXT = getI18nCopy("zh").previewTextDefault;
 const MAX_UPLOAD_BYTES = 20 * 1024 * 1024;
-const FONT_CATALOG_URL = import.meta.env.VITE_FONT_CATALOG_URL || "https://aber0724.github.io/crosspoint-cjk-fonts/catalog.json";
 const FONT_CATALOG_PAGE_URL = import.meta.env.VITE_FONT_CATALOG_PAGE_URL || "https://aber0724.github.io/crosspoint-cjk-fonts/";
 const CONVERSION_HISTORY_STORAGE_KEY = "xteink-conversion-history-v1";
 const THEME_STORAGE_KEY = "xteink-theme-mode-v1";
@@ -382,81 +380,6 @@ function localizedFontName(font) {
   return names.zh || names.ja || names.en || Object.values(names)[0] || "font";
 }
 
-function CatalogPanel({ copy, catalog, error }) {
-  const [query, setQuery] = useState("");
-  const [previewSize, setPreviewSize] = useState("14");
-  const filtered = useMemo(() => {
-    if (!catalog) return [];
-    const needle = query.trim().toLocaleLowerCase();
-    return catalog.families.filter((family) => !needle || `${family.name} ${family.description}`.toLocaleLowerCase().includes(needle));
-  }, [catalog, query]);
-
-  if (error) {
-    return (
-      <Card className="border-border">
-        <CardContent className="grid gap-4 p-6 text-sm text-muted-foreground">
-          <p>{copy.catalogError}</p>
-          <a className="font-medium text-foreground underline" href={FONT_CATALOG_PAGE_URL} target="_blank" rel="noreferrer">{copy.catalogOpen}</a>
-        </CardContent>
-      </Card>
-    );
-  }
-  if (!catalog) return <p className="p-6 text-sm text-muted-foreground">{copy.catalogLoading}</p>;
-
-  return (
-    <div className="grid gap-5">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-        <Input className="sm:min-w-0 sm:flex-1" value={query} onChange={(event) => setQuery(event.target.value)} placeholder={copy.catalogSearch} />
-        <div
-          role="group"
-          aria-label={copy.catalogPreviewSize}
-          className="inline-flex h-10 w-full shrink-0 items-center rounded-full bg-muted p-1 sm:w-auto"
-        >
-          {catalog.previewSizes.map((size) => {
-            const active = previewSize === String(size);
-            return (
-              <button
-                key={size}
-                type="button"
-                onClick={() => setPreviewSize(String(size))}
-                aria-pressed={active}
-                title={copy.catalogPreviewSize}
-                className={`h-8 flex-1 whitespace-nowrap rounded-full px-3 text-xs transition-all duration-200 sm:flex-none sm:text-sm ${
-                  active
-                    ? "bg-background font-medium text-foreground shadow-sm"
-                    : "text-foreground/75 hover:text-foreground"
-                }`}
-              >
-                {size} pt
-              </button>
-            );
-          })}
-        </div>
-        <a className="inline-flex h-10 shrink-0 items-center justify-center rounded-md border border-border px-4 text-sm font-medium" href={FONT_CATALOG_PAGE_URL} target="_blank" rel="noreferrer">{copy.catalogOpen}</a>
-      </div>
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-        {filtered.map((family) => (
-          <Card key={family.name} className="overflow-hidden border-border">
-            <CardHeader className="pb-3">
-              <div className="flex items-start justify-between gap-3">
-                <div><CardTitle className="text-lg">{family.name}</CardTitle><CardDescription className="mt-1">{family.description}</CardDescription></div>
-                <span className="rounded border border-border px-2 py-1 text-[10px] uppercase text-muted-foreground">{family.licenseStatus}</span>
-              </div>
-            </CardHeader>
-            <CardContent className="grid gap-3">
-              <img src={family.previews[previewSize]} alt={`${family.name} ${previewSize} pt`} className="w-full border border-border bg-white" loading="lazy" />
-              <p className="text-xs text-muted-foreground">{[...family.languages, family.category, family.license].filter(Boolean).join(" · ")}</p>
-              <div className="grid grid-cols-4 gap-1">
-                {family.files.map((file) => <a key={file.name} className="rounded border border-border px-2 py-1 text-center text-xs hover:border-primary" href={file.downloadUrl}>{file.physicalSize} pt</a>)}
-              </div>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
-    </div>
-  );
-}
-
 export function App() {
   const [locale, setLocale] = useState("zh");
   const [themeMode, setThemeMode] = useState(() => {
@@ -477,8 +400,6 @@ export function App() {
   });
   const [fontFile, setFontFile] = useState(null);
   const [activeSection, setActiveSection] = useState("make");
-  const [catalog, setCatalog] = useState(null);
-  const [catalogError, setCatalogError] = useState(false);
   const [cpfontCapability, setCpfontCapability] = useState(null);
   const [familyName, setFamilyName] = useState("font");
   const [forceAutohint, setForceAutohint] = useState(false);
@@ -551,9 +472,6 @@ export function App() {
 
   useEffect(() => {
     let cancelled = false;
-    fetchFontCatalog(FONT_CATALOG_URL)
-      .then((value) => { if (!cancelled) { setCatalog(value); setCatalogError(false); } })
-      .catch(() => { if (!cancelled) setCatalogError(true); });
     fetch("/api/capabilities")
       .then((response) => response.ok ? response.json() : Promise.reject(new Error("capabilities")))
       .then((value) => { if (!cancelled) setCpfontCapability(value.cpfont); })
@@ -936,8 +854,12 @@ export function App() {
             </div>
           </CardHeader>
           <div className="mb-5 flex flex-wrap gap-2 px-6">
+            <Button asChild variant="outline">
+              <a href={FONT_CATALOG_PAGE_URL} target="_blank" rel="noopener noreferrer">
+                {copy.fontLibrary}
+              </a>
+            </Button>
             {[
-              ["library", copy.fontLibrary],
               ["make", copy.makeCpfont],
               ["legacy", copy.legacyTools],
             ].map(([value, label]) => (
@@ -945,7 +867,6 @@ export function App() {
             ))}
           </div>
         <CardContent>
-            {activeSection === "library" ? <CatalogPanel copy={copy} catalog={catalog} error={catalogError} /> : (
             <div className="grid min-w-0 justify-center gap-5 xl:grid-cols-[380px_420px_380px]">
               <Card className="order-2 min-w-0 border-border">
                 <CardHeader className="pb-3">
@@ -1352,7 +1273,6 @@ export function App() {
                 </CardContent>
               </Card>
             </div>
-            )}
         </CardContent>
       </div>
 
