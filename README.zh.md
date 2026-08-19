@@ -84,10 +84,9 @@ npm run dev
 - `CPFONT_TOOL_ROOT`：规范字体仓库目录
 - `CPFONT_PYTHON`：安装了锁定依赖的 Python
 - `VITE_API_PROXY_TARGET`：本地 API 代理地址
-- `VITE_FONT_CATALOG_URL`：字体目录 JSON
-- `VITE_FONT_CATALOG_PAGE_URL`：独立字体目录页面
+- `VITE_FONT_CATALOG_PAGE_URL`：“字体库”链接打开的独立目录页面
 
-上传后的设备预览使用浏览器源字体近似渲染，并非最终点阵。字体库中的示例则来自实际 `.cpfont v4` 2-bit 点阵。
+上传后的设备预览使用浏览器源字体近似渲染，并非最终点阵。“字体库”会打开独立部署的目录，因此目录 UI 更新不需要重新构建或部署 Maker 镜像。
 
 ## Docker
 

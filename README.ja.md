@@ -66,9 +66,9 @@ npm run dev
 - Vite：`http://127.0.0.1:5173`
 - 能力確認：`http://127.0.0.1:3000/api/capabilities`
 
-環境変数：`CPFONT_TOOL_ROOT`、`CPFONT_PYTHON`、`VITE_API_PROXY_TARGET`、`VITE_FONT_CATALOG_URL`、`VITE_FONT_CATALOG_PAGE_URL`。
+環境変数：`CPFONT_TOOL_ROOT`、`CPFONT_PYTHON`、`VITE_API_PROXY_TARGET`、`VITE_FONT_CATALOG_PAGE_URL`。
 
-アップロード画面の端末プレビューは元フォントをブラウザーで近似表示したもので、最終 `.cpfont` ではありません。フォントライブラリの例は実際の `.cpfont v4` 2-bit ビットマップです。
+アップロード画面の端末プレビューは元フォントをブラウザーで近似表示したもので、最終 `.cpfont` ではありません。「フォントライブラリ」は独立デプロイされたカタログを開くため、カタログ UI の更新時に Maker イメージを再ビルド・再デプロイする必要はありません。
 
 ## Docker
 
