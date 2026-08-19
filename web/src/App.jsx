@@ -405,12 +405,34 @@ function CatalogPanel({ copy, catalog, error }) {
 
   return (
     <div className="grid gap-5">
-      <div className="flex flex-col gap-3 sm:flex-row">
-        <Input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={copy.catalogSearch} />
-        <select className="h-10 rounded-md border border-input bg-background px-3 text-sm" value={previewSize} onChange={(event) => setPreviewSize(event.target.value)}>
-          {catalog.previewSizes.map((size) => <option key={size} value={String(size)}>{size} pt</option>)}
-        </select>
-        <a className="inline-flex h-10 items-center justify-center rounded-md border border-border px-4 text-sm font-medium" href={FONT_CATALOG_PAGE_URL} target="_blank" rel="noreferrer">{copy.catalogOpen}</a>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+        <Input className="sm:min-w-0 sm:flex-1" value={query} onChange={(event) => setQuery(event.target.value)} placeholder={copy.catalogSearch} />
+        <div
+          role="group"
+          aria-label={copy.catalogPreviewSize}
+          className="inline-flex h-10 w-full shrink-0 items-center rounded-full bg-muted p-1 sm:w-auto"
+        >
+          {catalog.previewSizes.map((size) => {
+            const active = previewSize === String(size);
+            return (
+              <button
+                key={size}
+                type="button"
+                onClick={() => setPreviewSize(String(size))}
+                aria-pressed={active}
+                title={copy.catalogPreviewSize}
+                className={`h-8 flex-1 whitespace-nowrap rounded-full px-3 text-xs transition-all duration-200 sm:flex-none sm:text-sm ${
+                  active
+                    ? "bg-background font-medium text-foreground shadow-sm"
+                    : "text-foreground/75 hover:text-foreground"
+                }`}
+              >
+                {size} pt
+              </button>
+            );
+          })}
+        </div>
+        <a className="inline-flex h-10 shrink-0 items-center justify-center rounded-md border border-border px-4 text-sm font-medium" href={FONT_CATALOG_PAGE_URL} target="_blank" rel="noreferrer">{copy.catalogOpen}</a>
       </div>
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         {filtered.map((family) => (

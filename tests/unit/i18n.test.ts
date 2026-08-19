@@ -19,6 +19,7 @@ describe("i18n copy", () => {
       expect(copy.legacyTools).toBeTruthy();
       expect(copy.cpfontSizes).toContain("8 / 10 / 12 / 14 / 16 / 18 / 22");
       expect(copy.previewApproximate).toBeTruthy();
+      expect(copy.catalogPreviewSize).toBeTruthy();
     }
   });
 
