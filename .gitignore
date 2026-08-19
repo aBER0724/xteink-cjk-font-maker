@@ -15,6 +15,7 @@ web/dist/
 
 # Test and tool outputs
 coverage/
+.cache/
 *.log
 npm-debug.log*
 
