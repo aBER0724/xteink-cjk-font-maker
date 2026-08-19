@@ -5,6 +5,7 @@ import { pathToFileURL } from "node:url";
 import { createFileSystemStorage, readJsonObject, type AppStorage } from "../worker/src/storage.js";
 import { processOneJob, type QueueMessage } from "../worker/src/consumer.js";
 import { handleApiData } from "../worker/src/api.js";
+import { detectCpfontToolkit } from "../worker/src/cpfont/toolkit.js";
 
 const DEFAULT_PORT = 3000;
 
@@ -129,6 +130,7 @@ function isFrontendRoutePath(pathname: string): boolean {
 export function createServer(options: ServerOptions = {}) {
   const storage = createFileSystemStorage(options.storageRoot ?? path.resolve(process.cwd(), ".data"));
   const staticRoot = options.staticRoot ?? path.resolve(process.cwd(), "web/dist");
+  const cpfontCapabilityPromise = detectCpfontToolkit();
 
   return createNodeServer(async (request, response) => {
     try {
@@ -151,7 +153,7 @@ export function createServer(options: ServerOptions = {}) {
             headers: request.headers as Record<string, string | string[] | undefined>,
             body: await readRequestBody(request),
           },
-          { storage }
+          { storage, cpfontCapability: await cpfontCapabilityPromise }
         );
 
         if (method === "POST" && url.pathname === "/api/jobs" && apiResponse.status === 202) {

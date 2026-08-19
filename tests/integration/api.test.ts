@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createMemoryStorage } from "../../worker/src/storage";
+import type { CpfontCapability } from "../../worker/src/cpfont/types";
 import { handleApiData } from "../../worker/src/api";
 import { buildTestFontBytes } from "../helpers/font-fixture";
 
@@ -162,6 +163,80 @@ describe("api routes", () => {
     expect(body.status).toBe("queued");
     expect(body.request.font_weight).toBe(700);
     expect(body.request.output_format).toBeUndefined();
+  });
+
+  it("accepts cpfont-v4 jobs with a safe family name", async () => {
+    const { objectKey, storage } = await uploadFixture();
+    const res = await handleApiData(
+      {
+        method: "POST",
+        url: "https://example.com/api/jobs",
+        headers: { "content-type": "application/json" },
+        body: new TextEncoder().encode(JSON.stringify({
+          font_object_key: objectKey,
+          output_format: "cpfont-v4",
+          family_name: "ExampleCJK",
+          force_autohint: true,
+          font_name: "Example CJK.ttf",
+        })),
+      },
+      {
+        storage,
+        cpfontCapability: { available: true, version: 4, sizes: [8, 10, 12, 14, 16, 18, 22], root: "toolkit" },
+      }
+    );
+
+    expect(res.status).toBe(202);
+    const jobId = (await res.json()).job_id as string;
+    const state = await getJobState(jobId, storage);
+    await expect(state.json()).resolves.toMatchObject({
+      request: {
+        output_format: "cpfont-v4",
+        family_name: "ExampleCJK",
+        force_autohint: true,
+      },
+    });
+  });
+
+  it("rejects unsafe cpfont family names and unavailable toolkits", async () => {
+    const { objectKey, storage } = await uploadFixture();
+    const makeRequest = (familyName: string, capability: CpfontCapability) => handleApiData(
+      {
+        method: "POST",
+        url: "https://example.com/api/jobs",
+        headers: { "content-type": "application/json" },
+        body: new TextEncoder().encode(JSON.stringify({
+          font_object_key: objectKey,
+          output_format: "cpfont-v4",
+          family_name: familyName,
+        })),
+      },
+      { storage, cpfontCapability: capability }
+    );
+
+    const unsafe = await makeRequest("../bad", { available: true, version: 4, sizes: [8, 10, 12, 14, 16, 18, 22], root: "toolkit" });
+    expect(unsafe.status).toBe(400);
+    await expect(unsafe.json()).resolves.toEqual({ code: "ERR_INVALID_FAMILY_NAME" });
+
+    const unavailable = await makeRequest("ExampleCJK", { available: false, version: 4, sizes: [8, 10, 12, 14, 16, 18, 22], reason: "ERR_CPFONT_TOOL_MISSING" });
+    expect(unavailable.status).toBe(503);
+    await expect(unavailable.json()).resolves.toEqual({ code: "ERR_CPFONT_TOOL_MISSING" });
+  });
+
+  it("reports public conversion capabilities", async () => {
+    const storage = createMemoryStorage();
+    const response = await handleApiData(
+      { method: "GET", url: "https://example.com/api/capabilities" },
+      { storage, cpfontCapability: { available: true, version: 4, sizes: [8, 10, 12, 14, 16, 18, 22], root: "C:/private/toolkit" } }
+    );
+
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body).toEqual({
+      cpfont: { available: true, version: 4, sizes: [8, 10, 12, 14, 16, 18, 22] },
+      legacyFormats: ["legacy-bin", "xbf2"],
+    });
+    expect(JSON.stringify(body)).not.toContain("private");
   });
 
   it("persists requested output format on queued jobs", async () => {

@@ -1,6 +1,7 @@
 import { convertFontToBin, type ConvertProgress } from "./converter.js";
 import { buildOutputName } from "./file-name.js";
 import { readJsonObject, writeJsonObject, type AppStorage } from "./storage.js";
+import type { OutputFormat } from "./cpfont/types.js";
 
 export interface QueueMessage {
   job_id: string;
@@ -11,9 +12,11 @@ export interface QueueMessage {
   line_spacing_px?: number;
   output_width_px?: number;
   output_height_px?: number;
-  output_format?: "legacy-bin" | "xbf2";
+  output_format?: OutputFormat;
   compat_flip_y?: boolean;
   font_name?: string;
+  family_name?: string;
+  force_autohint?: boolean;
 }
 
 interface PersistedJobState {
