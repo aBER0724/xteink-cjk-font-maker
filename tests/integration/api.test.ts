@@ -198,6 +198,30 @@ describe("api routes", () => {
     });
   });
 
+  it("accepts a UI-only cpfont preset", async () => {
+    const { objectKey, storage } = await uploadFixture();
+    const res = await handleApiData(
+      {
+        method: "POST",
+        url: "https://example.com/api/jobs",
+        headers: { "content-type": "application/json" },
+        body: new TextEncoder().encode(JSON.stringify({
+          font_object_key: objectKey,
+          output_format: "cpfont-v4",
+          family_name: "ExampleUI",
+          package_role: "ui",
+          reader_sizes: [],
+        })),
+      },
+      { storage, cpfontCapability: { available: true, version: 4, sizes: [8, 10, 12], root: "toolkit" } }
+    );
+    expect(res.status).toBe(202);
+    const state = await getJobState((await res.json()).job_id as string, storage);
+    await expect(state.json()).resolves.toMatchObject({
+      request: { package_role: "ui", reader_sizes: [] },
+    });
+  });
+
   it("rejects unsafe cpfont family names and unavailable toolkits", async () => {
     const { objectKey, storage } = await uploadFixture();
     const makeRequest = (familyName: string, capability: CpfontCapability) => handleApiData(

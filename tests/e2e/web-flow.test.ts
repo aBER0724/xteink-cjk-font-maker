@@ -72,7 +72,7 @@ describe("web flow", () => {
       if (path === "/api/upload-url") return { upload_url: "/api/uploads?object_key=uploads%2Fsample.ttf", object_key: "uploads/sample.ttf" };
       if (path === "/api/jobs") { body = JSON.parse(String(init?.body)); return { job_id: "job-cpfont" }; }
       if (path === "/api/jobs/job-cpfont") return { status: "done", progress: { phase: "done", percent: 100 } };
-      if (path === "/api/jobs/job-cpfont/download") return { download_url: "/api/jobs/job-cpfont/download/file", output_name: "ExampleCJK_cpfont-v4.zip" };
+      if (path === "/api/jobs/job-cpfont/download") return { download_url: "/api/jobs/job-cpfont/download/file", output_name: "ExampleCJK.cpfontpkg" };
       throw new Error(`unexpected path: ${path}`);
     };
 
@@ -82,6 +82,8 @@ describe("web flow", () => {
       outputFormat: "cpfont-v4",
       familyName: "ExampleCJK",
       forceAutohint: true,
+      readerSizes: [13, 17, 24],
+      packageRole: "family",
     }, apiRequest, async () => undefined);
 
     expect(body).toMatchObject({
@@ -89,6 +91,8 @@ describe("web flow", () => {
       output_format: "cpfont-v4",
       family_name: "ExampleCJK",
       force_autohint: true,
+      reader_sizes: [13, 17, 24],
+      package_role: "family",
       font_name: "Example CJK.ttf",
     });
   });

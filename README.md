@@ -1,6 +1,6 @@
 # xteink-cjk-font-maker
 
-Web application for browsing published CrossPoint CJK fonts and generating the current `.cpfont v4` SD-card font package from a private `TTF/OTF` upload.
+Web application for browsing published CrossPoint CJK fonts and generating an installable `.cpfontpkg` family package from a private `TTF/OTF` upload.
 
 [English](README.md) | [简体中文](README.zh.md) | [日本語](README.ja.md)
 
@@ -8,13 +8,21 @@ Web application for browsing published CrossPoint CJK fonts and generating the c
 
 ## Current format
 
-The primary conversion flow invokes the canonical Python/FreeType converter from [`aBER0724/crosspoint-cjk-fonts`](https://github.com/aBER0724/crosspoint-cjk-fonts). It produces a deterministic ZIP containing physical `.cpfont v4` files at:
+The primary conversion flow invokes the canonical Python/FreeType converter from [`aBER0724/crosspoint-cjk-fonts`](https://github.com/aBER0724/crosspoint-cjk-fonts). It produces a deterministic `<Family>.cpfontpkg` ZIP container while preserving `.cpfont v4` as the single-physical-size font format.
+
+Every family package always contains the fixed UI sizes:
 
 ```text
-8 / 10 / 12 / 14 / 16 / 18 / 22 pt
+8 / 10 / 12 pt
 ```
 
-The package also includes `SHA256SUMS` and `build.json` provenance. The device selects a physical file and does not scale CJK fonts at runtime.
+Reader sizes are entered as a comma-separated list of positive integers from 1 to 255. At most 16 reader sizes may be requested; values are de-duplicated and sorted. The default is:
+
+```text
+14 / 16 / 18 / 22 pt
+```
+
+The archive stores one multi-style-capable `.cpfont v4` file per physical size and also includes `manifest.json`, `SHA256SUMS`, and `build.json` provenance. Current uploads provide Regular only; the package declares only styles that actually exist, allowing Reader-side weight fallback when Bold is unavailable. The device selects a physical file and does not scale CJK fonts at runtime.
 
 The previous `legacy-bin` and experimental `xbf2` converters remain under **Legacy Tools**. They are not the current SD-card catalog format.
 
@@ -32,8 +40,8 @@ It displays real `.cpfont` bitmap previews and links directly to the versioned G
 
 - Browse, search, preview, and download verified public families
 - Upload private `TTF/OTF` files up to 20 MiB
-- Generate `.cpfont v4` at seven physical sizes with optional FreeType auto-hinting
-- Download a ZIP with checksums and build provenance
+- Generate fixed 8/10/12 pt UI fonts plus a custom reader-size list as `.cpfont v4` files
+- Download one installable `.cpfontpkg` family package with a manifest, checksums, and build provenance
 - Keep `legacy-bin` and experimental `xbf2` compatibility tools
 - Async jobs, conversion history, multilingual UI, and PWA support
 

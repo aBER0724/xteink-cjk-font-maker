@@ -12,12 +12,18 @@ describe("i18n copy", () => {
     expect(getI18nCopy("en").title).toBe("CJK Font Converter");
   });
 
-  it("describes cpfont v4 as current and legacy formats as separate tools", () => {
+  it("describes the cpfont family package and separates legacy tools", () => {
     for (const locale of ["zh", "ja", "en"]) {
       const copy = getI18nCopy(locale);
-      expect(copy.outputFormatCpfont).toMatch(/v4/i);
+      expect(copy.outputFormatCpfont).toMatch(/cpfontpkg/i);
       expect(copy.legacyTools).toBeTruthy();
-      expect(copy.cpfontSizes).toContain("8 / 10 / 12 / 14 / 16 / 18 / 22");
+      expect(copy.cpfontSizes).toContain("8 / 10 / 12");
+      expect(copy.cpfontPreset).toBeTruthy();
+      expect(copy.cpfontPresetFamily).toBeTruthy();
+      expect(copy.cpfontPresetUi).toBeTruthy();
+      expect(copy.cpfontPresetUiHint).toContain("8 / 10 / 12");
+      expect(copy.readerSizes).toBeTruthy();
+      expect(copy.readerSizesHint).toContain("14");
       expect(copy.previewApproximate).toBeTruthy();
       expect(copy.fontLibrary).toBeTruthy();
       expect(copy.makeCpfont).toBeTruthy();

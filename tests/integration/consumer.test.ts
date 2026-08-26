@@ -23,7 +23,7 @@ async function createTempDir() {
 }
 
 describe("processOneJob", () => {
-  it("packages a cpfont-v4 job as a seven-size ZIP", async () => {
+  it("packages a cpfont-v4 job as a family package", async () => {
     const storage = createMemoryStorage();
     const fontBytes = buildTestFontBytes();
     await storage.writeUpload("uploads/sample.ttf", fontBytes);
@@ -67,10 +67,10 @@ describe("processOneJob", () => {
       },
     });
 
-    expect(result).toEqual({ status: "done", output_key: "outputs/job-cpfont.zip", output_name: "ExampleCJK_cpfont-v4.zip" });
-    const output = await storage.readOutput("outputs/job-cpfont.zip");
+    expect(result).toEqual({ status: "done", output_key: "outputs/job-cpfont.cpfontpkg", output_name: "ExampleCJK.cpfontpkg" });
+    const output = await storage.readOutput("outputs/job-cpfont.cpfontpkg");
     expect(output).not.toBeNull();
-    expect(Object.keys(unzipSync(output!))).toHaveLength(9);
+    expect(Object.keys(unzipSync(output!))).toHaveLength(10);
     const state = JSON.parse((await storage.readJob("job-cpfont"))!);
     expect(state.progress.phase).toBe("done");
     expect(writeJobSpy.mock.calls.some(([, value]) => JSON.parse(value).progress?.phase === "packaging")).toBe(true);

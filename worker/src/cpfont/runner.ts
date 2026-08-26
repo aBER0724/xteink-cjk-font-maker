@@ -2,7 +2,7 @@ import { spawn } from "node:child_process";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { CPFONT_PHYSICAL_SIZES, type CpfontCapability } from "./types.js";
+import { cpfontPhysicalSizes, type CpfontCapability } from "./types.js";
 import { validateCpfontFamily, type ValidatedCpfontFile } from "./validator.js";
 
 
@@ -41,6 +41,7 @@ export interface CpfontConversionInput {
   fontData: Uint8Array;
   sourceName: string;
   familyName: string;
+  readerSizes?: number[];
   forceAutohint?: boolean;
   timeoutMs?: number;
   maxFileBytes?: number;
@@ -134,7 +135,7 @@ export async function runCpfontConversion(input: CpfontConversionInput): Promise
       "--style", "regular",
       "--fallback-regular", capability.fallbackPath,
       "--intervals", "latin-ext,cjk",
-      "--sizes", CPFONT_PHYSICAL_SIZES.join(","),
+      "--sizes", cpfontPhysicalSizes(input.readerSizes).join(","),
       "--name", input.familyName,
       "--output-dir", outputDir,
     ];
@@ -162,7 +163,7 @@ export async function runCpfontConversion(input: CpfontConversionInput): Promise
     }
 
     emit(input, "validating", 85);
-    const files = await validateCpfontFamily(outputDir, input.familyName, {
+    const files = await validateCpfontFamily(outputDir, input.familyName, cpfontPhysicalSizes(input.readerSizes), {
       maxFileBytes: input.maxFileBytes,
       maxPackageBytes: input.maxPackageBytes,
     });

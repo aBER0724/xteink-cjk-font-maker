@@ -20,6 +20,14 @@ import { Textarea } from "@/components/ui/textarea";
 
 const DEFAULT_PREVIEW_TEXT = getI18nCopy("zh").previewTextDefault;
 const MAX_UPLOAD_BYTES = 20 * 1024 * 1024;
+const parseReaderSizes = (value) => {
+  const parts = value.split(",").map((part) => part.trim());
+  if (!parts.length || parts.some((part) => !/^\d+$/.test(part))) return null;
+  const sizes = [...new Set(parts.map(Number))]
+    .filter((size) => ![8, 10, 12].includes(size))
+    .sort((left, right) => left - right);
+  return sizes.length > 0 && sizes.length <= 16 && sizes.every((size) => size >= 1 && size <= 255) ? sizes : null;
+};
 const FONT_CATALOG_PAGE_URL = import.meta.env.VITE_FONT_CATALOG_PAGE_URL || "https://aber0724.github.io/crosspoint-cjk-fonts/";
 const CONVERSION_HISTORY_STORAGE_KEY = "xteink-conversion-history-v1";
 const THEME_STORAGE_KEY = "xteink-theme-mode-v1";
@@ -403,6 +411,8 @@ export function App() {
   const [cpfontCapability, setCpfontCapability] = useState(null);
   const [familyName, setFamilyName] = useState("font");
   const [forceAutohint, setForceAutohint] = useState(false);
+  const [readerSizesInput, setReaderSizesInput] = useState("14, 16, 18, 22");
+  const [cpfontPreset, setCpfontPreset] = useState("family");
   const [tier, setTier] = useState("65k");
   const [fontSizePx, setFontSizePx] = useState(28);
   const [fontWeight, setFontWeight] = useState(FONT_WEIGHT_BASE);
@@ -718,6 +728,13 @@ export function App() {
       setStatus({ type: "failed", detail: copy.familyName });
       return;
     }
+    const readerSizes = outputFormat === "cpfont-v4"
+      ? (cpfontPreset === "ui" ? [] : parseReaderSizes(readerSizesInput))
+      : null;
+    if (outputFormat === "cpfont-v4" && !readerSizes) {
+      setStatus({ type: "failed", detail: copy.readerSizesInvalid });
+      return;
+    }
     if (outputFormat === "cpfont-v4" && cpfontCapability?.available === false) {
       setStatus({ type: "failed", detail: cpfontCapability.reason || "ERR_CPFONT_TOOL_MISSING" });
       return;
@@ -740,6 +757,8 @@ export function App() {
         outputFormat,
         familyName,
         forceAutohint,
+        readerSizes,
+        packageRole: cpfontPreset,
         compatFlipY: true,
       }, undefined, undefined, (progress) => {
         setProgressPercent(progress.percent);
@@ -748,14 +767,14 @@ export function App() {
       setStatus({ type: "done", detail: result.jobId });
       setProgressPercent(100);
       setDownloadUrl(result.downloadUrl);
-      setDownloadName(result.outputName || (outputFormat === "cpfont-v4" ? `${familyName}_cpfont-v4.zip` : `${result.jobId}.bin`));
+      setDownloadName(result.outputName || (outputFormat === "cpfont-v4" ? `${familyName}.cpfontpkg` : `${result.jobId}.bin`));
       setNowTimestamp(Date.now());
       const historyPreviewDataUrl = createHistoryPreviewDataUrl(previewCanvasRef.current);
       setConversionHistory((previous) => [
         {
           id: result.jobId,
           fontName: fontFile.name,
-          outputName: result.outputName || (outputFormat === "cpfont-v4" ? `${familyName}_cpfont-v4.zip` : `${result.jobId}.bin`),
+          outputName: result.outputName || (outputFormat === "cpfont-v4" ? `${familyName}.cpfontpkg` : `${result.jobId}.bin`),
           downloadUrl: result.downloadUrl,
           previewImageDataUrl: historyPreviewDataUrl,
           tier,
@@ -803,11 +822,25 @@ export function App() {
 
       <div className="w-full max-w-[1200px]">
         <CardHeader>
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div>
+            <div className="grid gap-3 xl:flex xl:items-center xl:justify-between">
+              <div className="flex flex-wrap items-center justify-between gap-2">
                 <CardTitle className="text-2xl md:text-3xl">{copy.title}</CardTitle>
+                <div className="ml-auto flex shrink-0 items-center gap-2">
+                  <Button asChild variant="outline">
+                    <a href={FONT_CATALOG_PAGE_URL} target="_blank" rel="noopener noreferrer">
+                      {copy.fontLibrary}
+                    </a>
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => setActiveSection(activeSection === "make" ? "legacy" : "make")}
+                  >
+                    {activeSection === "make" ? copy.legacyTools : copy.makeCpfont}
+                  </Button>
+                </div>
               </div>
-              <div className="flex w-full items-center justify-end gap-1 overflow-x-auto whitespace-nowrap sm:w-auto sm:gap-2">
+              <div className="flex w-full items-center justify-center gap-2 overflow-x-auto whitespace-nowrap xl:w-auto xl:justify-end">
                 <div className="inline-flex shrink-0 items-center rounded-full bg-muted p-1">
                   {LOCALE_OPTIONS.filter((item) => SUPPORTED_LOCALES.includes(item.value)).map((item) => {
                     const active = item.value === locale;
@@ -853,21 +886,8 @@ export function App() {
               </div>
             </div>
           </CardHeader>
-          <div className="mb-5 flex flex-wrap gap-2 px-6">
-            <Button asChild variant="outline">
-              <a href={FONT_CATALOG_PAGE_URL} target="_blank" rel="noopener noreferrer">
-                {copy.fontLibrary}
-              </a>
-            </Button>
-            {[
-              ["make", copy.makeCpfont],
-              ["legacy", copy.legacyTools],
-            ].map(([value, label]) => (
-              <Button key={value} type="button" variant={activeSection === value ? "default" : "outline"} onClick={() => setActiveSection(value)}>{label}</Button>
-            ))}
-          </div>
         <CardContent>
-            <div className="grid min-w-0 justify-center gap-5 xl:grid-cols-[380px_420px_380px]">
+            <div className="grid min-w-0 justify-center gap-5 md:grid-cols-2 xl:grid-cols-[380px_420px_380px]">
               <Card className="order-2 min-w-0 border-border">
                 <CardHeader className="pb-3">
                   <CardTitle className="text-base">{copy.conversionSettings}</CardTitle>
@@ -887,13 +907,13 @@ export function App() {
                           className="absolute inset-0 z-10 h-full w-full cursor-pointer opacity-0"
                         />
                         <div
-                          className={`flex h-11 w-full items-center gap-2 rounded-md border px-2 text-sm transition-colors ${
+                          className={`flex h-11 w-full items-center gap-2 rounded-full border px-2 text-sm transition-colors ${
                             fontFile
                               ? "border-primary/40 bg-primary/5"
                               : "border-input bg-background hover:border-ring/40 hover:bg-muted/30"
                           }`}
                         >
-                          <span className="inline-flex h-8 shrink-0 items-center rounded-md bg-muted px-3.5 font-medium text-foreground">
+                          <span className="inline-flex h-8 shrink-0 items-center rounded-full bg-muted px-3.5 font-medium text-foreground">
                             {copy.chooseFile}
                           </span>
                           <span className={`min-w-0 flex-1 truncate ${fontFile ? "text-foreground" : "text-muted-foreground"}`}>
@@ -911,6 +931,46 @@ export function App() {
                           <Label htmlFor="family-name">{copy.familyName}</Label>
                           <Input id="family-name" value={familyName} onChange={(event) => setFamilyName(normalizeFamilyId(event.target.value))} />
                         </div>
+                        <div className="grid gap-2">
+                          <Label>{copy.cpfontPreset}</Label>
+                          <div role="group" aria-label={copy.cpfontPreset} className="inline-flex w-full items-center rounded-full bg-muted p-1">
+                            {[
+                              ["family", copy.cpfontPresetFamily],
+                              ["ui", copy.cpfontPresetUi],
+                            ].map(([value, label]) => {
+                              const active = cpfontPreset === value;
+                              return (
+                                <button
+                                  key={value}
+                                  type="button"
+                                  onClick={() => setCpfontPreset(value)}
+                                  aria-pressed={active}
+                                  className={`flex-1 rounded-full px-3 py-1.5 text-center text-sm transition-all duration-200 ${
+                                    active ? "bg-background font-medium text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
+                                  }`}
+                                >
+                                  {label}
+                                </button>
+                              );
+                            })}
+                          </div>
+                          <p className="text-xs text-muted-foreground">
+                            {cpfontPreset === "ui" ? copy.cpfontPresetUiHint : copy.cpfontPresetFamilyHint}
+                          </p>
+                        </div>
+                        {cpfontPreset === "family" ? (
+                          <div className="grid gap-2">
+                            <Label htmlFor="reader-sizes">{copy.readerSizes}</Label>
+                            <Input
+                              id="reader-sizes"
+                              value={readerSizesInput}
+                              onChange={(event) => setReaderSizesInput(event.target.value)}
+                              placeholder="14, 16, 18, 22"
+                              inputMode="numeric"
+                            />
+                            <p className="text-xs text-muted-foreground">{copy.readerSizesHint}</p>
+                          </div>
+                        ) : null}
                         <div className="rounded-md border border-border bg-muted/30 p-3 text-xs leading-relaxed text-muted-foreground">
                           <p>{copy.outputFormatCpfont}</p>
                           <p>{copy.cpfontSizes}</p>
@@ -1187,7 +1247,7 @@ export function App() {
                 </CardContent>
               </Card>
 
-              <Card className="order-3 min-w-0 border-border">
+              <Card className="order-3 min-w-0 border-border md:col-span-2 xl:col-span-1">
                 <CardHeader className="pb-3">
                   <CardTitle className="text-base">{copy.historyTitle}</CardTitle>
                 </CardHeader>
@@ -1195,7 +1255,7 @@ export function App() {
                   {conversionHistory.length === 0 ? (
                     <p className="text-sm text-muted-foreground">{copy.historyEmpty}</p>
                   ) : (
-                    <div className="grid min-w-0 gap-3">
+                    <div className="grid min-w-0 gap-3 md:grid-cols-2 xl:grid-cols-1">
                       {conversionHistory.map((record) => (
                         <div
                           key={record.id}
@@ -1274,6 +1334,19 @@ export function App() {
               </Card>
             </div>
         </CardContent>
+        <footer className="mt-4 flex justify-center pt-4 text-xs text-muted-foreground">
+          <a
+            className="inline-flex items-center gap-1.5 transition-colors hover:text-foreground focus-visible:text-foreground"
+            href="https://github.com/aBER0724/crosspoint-cjk-font-maker"
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label="CrossPoint CJK Font Maker on GitHub"
+          >
+            <svg className="h-6 w-6" viewBox="0 0 24 24" aria-hidden="true">
+              <path fill="currentColor" d="M12 .7a11.5 11.5 0 0 0-3.64 22.41c.58.11.79-.25.79-.56v-2.23c-3.22.7-3.9-1.37-3.9-1.37-.53-1.34-1.29-1.7-1.29-1.7-1.05-.72.08-.71.08-.71 1.16.08 1.78 1.2 1.78 1.2 1.04 1.77 2.72 1.26 3.38.97.1-.75.4-1.26.74-1.55-2.57-.29-5.28-1.29-5.28-5.74 0-1.27.45-2.3 1.2-3.11-.12-.29-.52-1.47.11-3.07 0 0 .98-.31 3.16 1.19a10.9 10.9 0 0 1 5.75 0c2.19-1.5 3.16-1.19 3.16-1.19.64 1.6.24 2.78.12 3.07.74.81 1.19 1.84 1.19 3.11 0 4.46-2.71 5.44-5.29 5.73.42.36.79 1.07.79 2.16v3.2c0 .31.21.68.8.56A11.5 11.5 0 0 0 12 .7Z" />
+            </svg>
+          </a>
+        </footer>
       </div>
 
       {selectedHistoryPreview ? (

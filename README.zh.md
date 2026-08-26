@@ -1,6 +1,6 @@
 # xteink-cjk-font-maker
 
-用于浏览 CrossPoint 公开 CJK 字体，并把私人 `TTF/OTF` 转换成当前正式 `.cpfont v4` SD 卡字体包的 Web 应用。
+用于浏览 CrossPoint 公开 CJK 字体，并把私人 `TTF/OTF` 转换成可安装 `.cpfontpkg` 字体家族包的 Web 应用。
 
 [English](README.md) | [简体中文](README.zh.md) | [日本語](README.ja.md)
 
@@ -8,13 +8,21 @@
 
 ## 当前正式格式
 
-默认转换流程调用 [`aBER0724/crosspoint-cjk-fonts`](https://github.com/aBER0724/crosspoint-cjk-fonts) 的规范 Python/FreeType 转换器，生成包含以下物理字号的确定性 ZIP：
+默认转换流程调用 [`aBER0724/crosspoint-cjk-fonts`](https://github.com/aBER0724/crosspoint-cjk-fonts) 的规范 Python/FreeType 转换器，生成确定性的 `<Family>.cpfontpkg` ZIP 容器，同时保持 `.cpfont v4` 为单个物理字号的字体格式。
+
+每个家族包固定包含以下 UI 字号：
 
 ```text
-8 / 10 / 12 / 14 / 16 / 18 / 22 pt
+8 / 10 / 12 pt
 ```
 
-包内同时包含 `SHA256SUMS` 和 `build.json` 构建溯源。设备只选择真实物理文件，不会在运行时缩放 CJK 字体。
+阅读字号通过逗号分隔的正整数列表输入，范围为 1–255，最多 16 个；系统会自动去重并排序。默认值为：
+
+```text
+14 / 16 / 18 / 22 pt
+```
+
+包内每个物理字号对应一个支持多 style 的 `.cpfont v4` 文件，并同时包含 `manifest.json`、`SHA256SUMS` 和 `build.json` 构建溯源。当前只上传 Regular 字体，因此包只声明实际存在的 Regular；未提供 Bold 时由 Reader 执行字重回退。设备只选择真实物理文件，不会在运行时缩放 CJK 字体。
 
 原有 `legacy-bin` 和实验性 `xbf2` 保留在 **旧格式工具** 中；它们不是当前 SD 卡字体目录格式。
 

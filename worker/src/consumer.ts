@@ -4,7 +4,7 @@ import { convertFontToBin, type ConvertProgress } from "./converter.js";
 import { buildOutputName } from "./file-name.js";
 import { buildCpfontPackage } from "./cpfont/package.js";
 import { cleanupCpfontConversion, runCpfontConversion } from "./cpfont/runner.js";
-import type { CpfontCapability, OutputFormat } from "./cpfont/types.js";
+import { DEFAULT_CPFONT_READER_SIZES, type CpfontCapability, type OutputFormat } from "./cpfont/types.js";
 import { readJsonObject, writeJsonObject, type AppStorage } from "./storage.js";
 
 export interface QueueMessage {
@@ -21,6 +21,8 @@ export interface QueueMessage {
   font_name?: string;
   family_name?: string;
   force_autohint?: boolean;
+  reader_sizes?: number[];
+  package_role?: "family" | "ui";
 }
 
 interface PersistedJobState {
@@ -181,6 +183,7 @@ export async function processOneJob(msg: QueueMessage, env: ConsumerEnv): Promis
         fontData: fontBytes,
         sourceName: msg.font_name ?? "font.ttf",
         familyName: msg.family_name,
+        readerSizes: msg.reader_sizes ?? [...DEFAULT_CPFONT_READER_SIZES],
         forceAutohint: msg.force_autohint,
         onProgress: (progress) => {
           progressWrite = progressWrite.then(() => persistJobProgress(env.storage, msg.job_id, msg, progress));
@@ -203,12 +206,14 @@ export async function processOneJob(msg: QueueMessage, env: ConsumerEnv): Promis
           sourceSha256: createHash("sha256").update(fontBytes).digest("hex"),
           fallbackSha256: createHash("sha256").update(fallbackBytes).digest("hex"),
           forceAutohint: msg.force_autohint === true,
+          readerSizes: msg.reader_sizes ?? [...DEFAULT_CPFONT_READER_SIZES],
+          packageRole: msg.package_role ?? "family",
           toolkitRepository: env.cpfontCapability.provenance.repository,
           toolkitCommit: env.cpfontCapability.provenance.commit,
           pythonVersion: env.cpfontCapability.provenance.pythonVersion,
           dependencies: env.cpfontCapability.provenance.dependencies,
         });
-        const outputKey = `outputs/${msg.job_id}.zip`;
+        const outputKey = `outputs/${msg.job_id}.cpfontpkg`;
         await env.storage.writeOutput(outputKey, packageResult.data);
         await writeJobState(env.storage, msg.job_id, {
           job_id: msg.job_id,

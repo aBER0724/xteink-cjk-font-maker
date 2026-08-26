@@ -1,6 +1,6 @@
 # xteink-cjk-font-maker
 
-CrossPoint の公開 CJK フォントを閲覧し、非公開の `TTF/OTF` から現在の正式な `.cpfont v4` SD カード用パッケージを生成する Web アプリです。
+CrossPoint の公開 CJK フォントを閲覧し、非公開の `TTF/OTF` からインストール可能な `.cpfontpkg` フォントファミリーパッケージを生成する Web アプリです。
 
 [English](README.md) | [简体中文](README.zh.md) | [日本語](README.ja.md)
 

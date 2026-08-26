@@ -1,7 +1,6 @@
 import { strToU8, zipSync } from "fflate";
 import type { CpfontConversionResult } from "./runner.js";
-import { CPFONT_PHYSICAL_SIZES, CPFONT_VERSION } from "./types.js";
-
+import { cpfontPhysicalSizes, CPFONT_UI_SIZES, CPFONT_VERSION, DEFAULT_CPFONT_READER_SIZES } from "./types.js";
 
 interface CpfontPackageInput {
   conversion: CpfontConversionResult;
@@ -10,6 +9,8 @@ interface CpfontPackageInput {
   sourceSha256: string;
   fallbackSha256: string;
   forceAutohint: boolean;
+  readerSizes?: number[];
+  packageRole?: "family" | "ui";
   toolkitRepository: string;
   toolkitCommit: string;
   pythonVersion: string;
@@ -31,12 +32,36 @@ export async function buildCpfontPackage(input: CpfontPackageInput): Promise<Cpf
   }
   const sums = input.conversion.files.map((file) => `${file.sha256}  ${file.name}`).join("\n") + "\n";
   entries[`${folder}SHA256SUMS`] = [strToU8(sums), { level: 6, mtime: FIXED_ZIP_TIME }];
+  const readerSizes = input.packageRole === "ui" ? [] : (input.readerSizes ?? [...DEFAULT_CPFONT_READER_SIZES]);
+  const physicalSizes = cpfontPhysicalSizes(readerSizes);
+  const manifest = {
+    format: 1,
+    family: input.familyName,
+    id: input.familyName,
+    role: input.packageRole ?? "family",
+    cpfontVersion: CPFONT_VERSION,
+    uiSizes: [...CPFONT_UI_SIZES],
+    readerSizes,
+    styles: ["regular"],
+    fonts: input.conversion.files.map((file) => ({
+      size: file.physicalSize,
+      role: CPFONT_UI_SIZES.includes(file.physicalSize as 8 | 10 | 12) ? "ui" : "reader",
+      file: file.name,
+      styles: ["regular"],
+      sizeBytes: file.byteSize,
+      sha256: file.sha256,
+    })),
+  };
+  entries[`${folder}manifest.json`] = [
+    strToU8(JSON.stringify(manifest, null, 2) + "\n"),
+    { level: 6, mtime: FIXED_ZIP_TIME },
+  ];
   const provenance = {
     schemaVersion: 1,
     cpfontVersion: CPFONT_VERSION,
-    physicalSizes: CPFONT_PHYSICAL_SIZES,
-    uiSizes: [8, 10, 12],
-    readerSizes: [14, 16, 18, 22],
+    physicalSizes,
+    uiSizes: [...CPFONT_UI_SIZES],
+    readerSizes,
     intervals: "latin-ext,cjk",
     forceAutohint: input.forceAutohint,
     source: { filename: input.sourceName, sha256: input.sourceSha256 },
@@ -50,7 +75,7 @@ export async function buildCpfontPackage(input: CpfontPackageInput): Promise<Cpf
     { level: 6, mtime: FIXED_ZIP_TIME },
   ];
   return {
-    name: `${input.familyName}_cpfont-v4.zip`,
+    name: `${input.familyName}.cpfontpkg`,
     data: zipSync(entries),
   };
 }

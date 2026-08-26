@@ -63,7 +63,7 @@ describe("cpfont v4 output validation", () => {
   it("rejects missing, unexpected, wrong-version, and non-regular files", async () => {
     const missing = await makeFamily();
     await import("node:fs/promises").then(({ unlink }) => unlink(path.join(missing.root, `${missing.family}_22.cpfont`)));
-    await expect(validateCpfontFamily(missing.root, missing.family)).rejects.toThrow(/exactly seven/);
+    await expect(validateCpfontFamily(missing.root, missing.family)).rejects.toThrow(/exactly 7/);
 
     const unexpected = await makeFamily();
     await writeFile(path.join(unexpected.root, "extra.txt"), "unexpected");

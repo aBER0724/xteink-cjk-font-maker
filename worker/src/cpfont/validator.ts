@@ -125,30 +125,33 @@ function validateCpfontBytes(bytes: Uint8Array, name: string): void {
   }
 }
 
-function expectedNames(familyName: string): string[] {
-  return CPFONT_PHYSICAL_SIZES.map((size) => `${familyName}_${size}.cpfont`);
+function expectedNames(familyName: string, physicalSizes: readonly number[]): string[] {
+  return physicalSizes.map((size) => `${familyName}_${size}.cpfont`);
 }
 
 export async function validateCpfontFamily(
   outputDir: string,
   familyName: string,
-  limits: ValidationLimits = {},
+  physicalSizesOrLimits: readonly number[] | ValidationLimits = CPFONT_PHYSICAL_SIZES,
+  explicitLimits: ValidationLimits = {},
 ): Promise<ValidatedCpfontFile[]> {
+  const physicalSizes = Array.isArray(physicalSizesOrLimits) ? physicalSizesOrLimits : CPFONT_PHYSICAL_SIZES;
+  const limits: ValidationLimits = Array.isArray(physicalSizesOrLimits) ? explicitLimits : physicalSizesOrLimits as ValidationLimits;
   const maxFileBytes = limits.maxFileBytes ?? 50 * 1024 * 1024;
   const maxPackageBytes = limits.maxPackageBytes ?? 350 * 1024 * 1024;
   const names = (await readdir(outputDir)).sort();
-  const expected = expectedNames(familyName).sort();
+  const expected = expectedNames(familyName, physicalSizes).sort();
   if (names.length !== expected.length || names.some((name, index) => name !== expected[index])) {
     const unexpected = names.filter((name) => !expected.includes(name));
     if (unexpected.length) {
       fail(`unexpected output file: ${unexpected[0]}`);
     }
-    fail(`expected exactly seven cpfont files for ${familyName}`);
+    fail(`expected exactly ${physicalSizes.length} cpfont files for ${familyName}`);
   }
 
   let packageBytes = 0;
   const validated: ValidatedCpfontFile[] = [];
-  for (const size of CPFONT_PHYSICAL_SIZES) {
+  for (const size of physicalSizes) {
     const name = `${familyName}_${size}.cpfont`;
     const filePath = path.join(outputDir, name);
     const metadata = await stat(filePath);

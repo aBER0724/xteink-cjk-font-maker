@@ -1,5 +1,12 @@
 import { createMemoryStorage, type AppStorage } from "./storage.js";
-import { CPFONT_PHYSICAL_SIZES, CPFONT_VERSION, type CpfontCapability, type OutputFormat } from "./cpfont/types.js";
+import {
+  CPFONT_PHYSICAL_SIZES,
+  CPFONT_VERSION,
+  DEFAULT_CPFONT_READER_SIZES,
+  normalizeReaderSizes,
+  type CpfontCapability,
+  type OutputFormat,
+} from "./cpfont/types.js";
 import { isValidCpfontFamilyName } from "./cpfont/toolkit.js";
 
 interface JobRequestPayload {
@@ -16,6 +23,8 @@ interface JobRequestPayload {
   font_name?: string;
   family_name?: string;
   force_autohint?: boolean;
+  reader_sizes?: number[];
+  package_role?: "family" | "ui";
 }
 
 interface JobState {
@@ -225,6 +234,16 @@ export async function handleApiData(request: ApiRequest, options: ApiHandlerOpti
         return json({ code: "ERR_INVALID_FAMILY_NAME" }, 400);
       }
       const capability = options.cpfontCapability;
+      const uiOnly = payload.package_role === "ui";
+      if (payload.package_role !== undefined && payload.package_role !== "family" && !uiOnly) {
+        return json({ code: "ERR_INVALID_PACKAGE_ROLE" }, 400);
+      }
+      const readerSizes = normalizeReaderSizes(payload.reader_sizes ?? (uiOnly ? [] : [...DEFAULT_CPFONT_READER_SIZES]), uiOnly);
+      if (!readerSizes || (uiOnly && readerSizes.length !== 0)) {
+        return json({ code: "ERR_INVALID_READER_SIZES" }, 400);
+      }
+      payload.package_role = uiOnly ? "ui" : "family";
+      payload.reader_sizes = readerSizes;
       if (!capability?.available) {
         return json({ code: capability?.reason ?? "ERR_CPFONT_TOOL_MISSING" }, 503);
       }
